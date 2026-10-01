@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employee Card - SAS VA Data-Driven Content</title>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pass: #22e39b;
+    --fail: #ff5c6c;
+    --text: #eef6f2;
+    --muted: #9fb5ac;
+    --line: rgba(255,255,255,.14);
+    --num: 'Exo 2', 'Segoe UI', sans-serif;
+    --ar: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { display: grid; place-items: center; padding: 6px; font-family: var(--ar); color: var(--text); }
+
+  .card {
+    width: 100%; max-width: 900px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(120% 140% at 0% 100%, rgba(18,120,80,.35), transparent 55%),
+      radial-gradient(90% 120% at 100% 0%, rgba(30,90,70,.25), transparent 60%),
+      linear-gradient(160deg, #0c1a16, #08120f 60%, #0b1914);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+    padding: clamp(12px, 3vw, 22px);
+    container-type: inline-size;
+  }
+
+  .top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: clamp(12px, 3cqi, 22px);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: clamp(12px, 3cqi, 22px);
+  }
+  .id { padding-inline-end: clamp(14px, 5cqi, 48px); border-inline-end: 1px solid var(--line); }
+  .id .label { font-size: clamp(11px, 2.2cqi, 14px); color: var(--muted); margin-bottom: 4px; }
+  .id .value { font-family: var(--num); font-weight: 800; font-size: clamp(24px, 6cqi, 40px); letter-spacing: .04em; direction: ltr; text-align: right; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: .5em; direction: ltr;
+    font-family: var(--num); font-weight: 700; font-size: clamp(15px, 3.2cqi, 22px);
+    padding: .3em .9em; border-radius: 999px;
+    color: var(--c); border: 1.5px solid var(--c);
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
+  }
+  .pill .dot { width: .4em; height: .4em; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
+  .pill.pass { --c: var(--pass); }
+  .pill.fail { --c: var(--fail); }
+  .pill.none { --c: var(--muted); box-shadow: none; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(8px, 2.2cqi, 16px); }
+  .stat {
+    border: 1px solid var(--line); border-radius: 12px; text-align: center;
+    padding: clamp(8px, 2cqi, 14px) 6px;
+    background: rgba(255,255,255,.025);
+  }
+  .stat .label { font-size: clamp(11px, 2.2cqi, 14px); color: var(--muted); margin-bottom: 4px; }
+  .stat .value { display: inline-flex; align-items: baseline; gap: .35em; }
+  .stat .num { font-family: var(--num); font-weight: 800; font-size: clamp(16px, 3.6cqi, 24px); direction: ltr; }
+  .stat .unit { font-size: clamp(10px, 2cqi, 13px); color: var(--muted); }
+
+  .msg { color: var(--muted); text-align: center; font-size: 14px; padding: 1rem; }
+</style>
+</head>
+<body>
+
+<div class="card" id="card"></div>
+
+<script>
+// ------------------------------------------------------------------
+// Draw the card from one employee record
+// ------------------------------------------------------------------
+const card = document.getElementById('card');
+
+function fmt(v, decimals) {
+  if (v === null || v === undefined || v === '') return '–';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: false });
+}
+
+function renderCard(emp) {
+  const r = String(emp.result ?? '').trim().toLowerCase();
+  const cls = r === 'pass' ? 'pass' : (r.startsWith('fail') ? 'fail' : 'none');
+  const text = cls === 'pass' ? 'Pass' : cls === 'fail' ? 'Failed' : (emp.result || '–');
+
+  card.innerHTML = `
+    <div class="top">
+      <div class="id">
+        <div class="label">رقم الموظف (ID)</div>
+        <div class="value">${fmt(emp.id, 0)}</div>
+      </div>
+      <span class="pill ${cls}">${text}<span class="dot"></span></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">الوزن</div>
+        <div class="value"><span class="num">${fmt(emp.weight, 1)}</span><span class="unit">kg</span></div></div>
+      <div class="stat"><div class="label">الطول</div>
+        <div class="value"><span class="num">${fmt(emp.height, 0)}</span><span class="unit">cm</span></div></div>
+      <div class="stat"><div class="label">العمر</div>
+        <div class="value"><span class="num">${fmt(emp.age, 0)}</span><span class="unit">سنة</span></div></div>
+    </div>`;
+}
+
+// ------------------------------------------------------------------
+// SAS VA messaging
+// Assign in the Roles pane, in this order:
+//   رقم الموظف (emp no) , الوزن , الطول , العمر , النتيجة الفعلية
+// Columns are matched by name first; if a name isn't recognised,
+// the assignment order above is used.
+// ------------------------------------------------------------------
+const FIELDS = [
+  { key: 'id',     words: ['رقم الموظف', 'emp', 'employee', 'id'] },
+  { key: 'weight', words: ['الوزن', 'weight'] },
+  { key: 'height', words: ['الطول', 'height'] },
+  { key: 'age',    words: ['العمر', 'age'] },
+  { key: 'result', words: ['النتيجة', 'result', 'status'] }
+];
+
+function mapColumns(columns) {
+  const cols = columns.map((c, i) => ({ i, text: `${c.label || ''} ${c.name || ''}`.toLowerCase(), usage: c.usage }))
+                      .filter(c => c.usage !== 'brush');
+  const map = {}, used = new Set();
+  for (const f of FIELDS) {
+    const hit = cols.find(c => !used.has(c.i) && f.words.some(w => c.text.includes(w)));
+    if (hit) { map[f.key] = hit.i; used.add(hit.i); }
+  }
+  const rest = cols.filter(c => !used.has(c.i));
+  for (const f of FIELDS) if (map[f.key] === undefined && rest.length) map[f.key] = rest.shift().i;
+  return map;
+}
+
+function showMessage(text, resultName) {
+  card.innerHTML = `<div class="msg">${text}</div>`;
+  if (resultName && window.parent !== window) window.parent.postMessage({ resultName, message: text }, '*');
+}
+
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (!msg || typeof msg !== 'object' || !('resultName' in msg)) return;
+  const columns = msg.columns || [], rows = msg.data || [];
+
+  if (columns.filter(c => c.usage !== 'brush').length < 5 || rows.length === 0) {
+    showMessage('أضف المتغيرات: رقم الموظف، الوزن، الطول، العمر، النتيجة الفعلية', msg.resultName);
+    return;
+  }
+
+  // Use the selected row if the card is the target of a selection, otherwise the first row
+  const brush = columns.findIndex(c => c.usage === 'brush');
+  const row = (brush >= 0 && rows.find(r => r[brush] > 0)) || rows[0];
+  const m = mapColumns(columns);
+
+  renderCard({
+    id: row[m.id], weight: row[m.weight], height: row[m.height], age: row[m.age], result: row[m.result]
+  });
+});
+
+// Sample when the page is opened directly (outside VA)
+if (window.parent === window) {
+  renderCard({ id: 204518, weight: 79.4, height: 178, age: 34, result: 'pass' });
+}
+</script>
+</body>
+</html>
