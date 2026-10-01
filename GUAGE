@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pass Gauge</title>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: transparent; }
+  #gauge { width: 400px; max-width: 100%; aspect-ratio: 1; }
+  #gauge svg { width: 100%; height: 100%; overflow: visible; display: block; }
+</style>
+</head>
+<body>
+
+<div id="gauge"></div>
+
+<script>
+/**
+ * renderGauge(container, statusColumn)
+ * statusColumn: one column of values, each "pass" or "failed".
+ * Shows the percentage of "pass". Background is transparent.
+ */
+function renderGauge(container, statusColumn) {
+  const values = (statusColumn || [])
+    .map(v => String(v ?? '').trim().toLowerCase())
+    .filter(v => v !== '');
+  const total = values.length;
+  const passCount = values.filter(v => v === 'pass').length;
+  const percent = total ? Math.round(passCount / total * 100) : 0;
+
+  const N = 21;                                   // bars in the ring
+  const greenBars = Math.round(passCount / (total || 1) * N);
+  const size = 400, c = size / 2, rOuter = 182, rInner = 120;
+  const segW = (2 * Math.PI * rInner / N) * 0.8;
+
+  let bars = '';
+  for (let i = 0; i < N; i++) {
+    const isPass = total > 0 && i < greenBars;
+    bars += `<rect x="${c - segW / 2}" y="${c - rOuter}" width="${segW}" height="${rOuter - rInner}"
+               rx="${segW / 2.6}" fill="${total ? (isPass ? '#00c896' : '#c95656') : '#888'}"
+               ${isPass ? 'filter="url(#glow)"' : ''}
+               transform="rotate(${360 / N * i} ${c} ${c})"/>`;
+  }
+
+  container.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" role="img"
+         aria-label="Pass ${percent}%">
+      <defs>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="6" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      ${bars}
+      <text x="${c}" y="${c + 12}" text-anchor="middle" font-family="'Exo 2', sans-serif"
+            font-weight="700" font-size="80" fill="#e6f4ee">${percent}%</text>
+      <text x="${c}" y="${c + 62}" text-anchor="middle" font-family="'Exo 2', sans-serif"
+            font-weight="500" font-size="34" fill="#8fb0a3">Pass</text>
+    </svg>`;
+  return percent;
+}
+
+// ---- Your column of statuses ----
+const status = ['pass', 'pass', 'failed', 'pass', 'pass', 'failed', 'pass', 'pass'];
+
+renderGauge(document.getElementById('gauge'), status);
+</script>
+</body>
+</html>
