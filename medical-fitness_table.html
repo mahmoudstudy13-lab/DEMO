@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Medical / Fitness Tabs - SAS VA Data-Driven Content</title>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #22e39b;
+    --text: #eef6f2;
+    --muted: #93a8a0;
+    --line: rgba(255,255,255,.14);
+    --row-line: rgba(255,255,255,.07);
+    --panel: rgba(12,22,19,.72);
+    --num: 'Exo 2', 'Segoe UI', sans-serif;
+    --ar: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; }
+  body { overflow-y: auto; padding: 6px; font-family: var(--ar); color: var(--text); }
+
+  /* Tabs */
+  .tabs {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px;
+    padding: 6px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--panel); margin-bottom: 14px;
+  }
+  .tab {
+    font: 500 15px var(--ar); color: var(--text); cursor: pointer;
+    background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 9px 12px;
+  }
+  .tab[aria-selected="true"] {
+    font-weight: 700; border: 1.5px solid var(--accent);
+    background: linear-gradient(180deg, rgba(34,227,155,.16), rgba(34,227,155,.05));
+    box-shadow: 0 0 14px rgba(34,227,155,.25);
+  }
+  .tab:focus-visible, .sec-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Sections (accordion) */
+  .section { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); margin-bottom: 10px; overflow: hidden; }
+  .sec-head {
+    width: 100%; display: flex; align-items: baseline; gap: 14px;
+    padding: 13px 16px; cursor: pointer; text-align: start;
+    background: transparent; border: 0; color: var(--text); font-family: var(--ar);
+  }
+  .sec-head .title { font-weight: 700; font-size: 16px; }
+  .sec-head .count { color: var(--muted); font-size: 13px; }
+  .sec-head .count b { font-family: var(--num); color: var(--text); margin-inline-start: 6px; }
+  .sec-head .chev { margin-inline-start: auto; color: var(--muted); transition: transform .2s; }
+  .section.open .chev { transform: rotate(180deg); }
+  .sec-body { display: none; border-top: 1px solid var(--line); }
+  .section.open .sec-body { display: block; }
+
+  /* List table */
+  .row { display: grid; grid-template-columns: 1fr 1fr; padding: 13px 16px; border-bottom: 1px solid var(--row-line); }
+  .row:last-child { border-bottom: 0; }
+  .row.head { color: var(--muted); font-size: 13px; padding-block: 10px; }
+  .name { font-size: 16px; }
+  .name .en { color: var(--muted); margin-inline-start: 4px; }
+  .value { font-weight: 700; font-size: 16px; direction: ltr; text-align: right; }
+  .value .unit { font-weight: 700; margin-left: 4px; }
+
+  .msg { color: var(--muted); text-align: center; font-size: 14px; padding: 1.5rem; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ==================================================================
+// CONFIG: tabs, sections, and which variable goes where.
+// Edit this part to add / rename / move indicators.
+//   match:    words used to recognise the VA column (Arabic or English)
+//   unit:     shown after the value      decimals: digits after the point
+// ==================================================================
+const TABS = [
+  { id: 'medical', label: 'الطبي' },
+  { id: 'fitness', label: 'اللياقة' }
+];
+
+const SECTIONS = [
+  // الطبي: medical tests only
+  { id: 'vitals',  tab: 'medical', label: 'العلامات الحيوية' },
+  { id: 'blood',   tab: 'medical', label: 'تحاليل الدم' },
+  { id: 'other',   tab: 'medical', label: 'مؤشرات أخرى' },     // any assigned variable not listed below
+  // اللياقة: body measurements, body mass, muscle, fitness tests
+  { id: 'body',    tab: 'fitness', label: 'تكوين الجسم' },
+  { id: 'muscle',  tab: 'fitness', label: 'العضلات والدهون' },
+  { id: 'metab',   tab: 'fitness', label: 'الأيض والعمر' },
+  { id: 'tests',   tab: 'fitness', label: 'اختبارات اللياقة' }
+];
+
+const VARIABLES = [
+  // ---------- الطبي ----------
+  // العلامات الحيوية
+  { section: 'vitals', ar: 'ضغط الدم الانقباضي', en: 'SBP', unit: 'mmHg', decimals: 0, match: ['الانقباضي', 'systolic', 'sbp'] },
+  { section: 'vitals', ar: 'ضغط الدم الانبساطي', en: 'DBP', unit: 'mmHg', decimals: 0, match: ['الانبساطي', 'diastolic', 'dbp'] },
+  { section: 'vitals', ar: 'معدل النبض', en: 'Heart Rate', unit: 'bpm', decimals: 0, match: ['النبض', 'heart', 'pulse'] },
+  { section: 'vitals', ar: 'تشبع الأكسجين', en: 'SpO2', unit: '%', decimals: 0, match: ['الأكسجين', 'spo2', 'oxygen'] },
+  { section: 'vitals', ar: 'درجة الحرارة', en: 'Temp', unit: '°C', decimals: 1, match: ['الحرارة', 'temp'] },
+  // تحاليل الدم
+  { section: 'blood', ar: 'السكر الصائم', en: 'FBS', unit: 'mg/dL', decimals: 0, match: ['السكر', 'glucose', 'fbs'] },
+  { section: 'blood', ar: 'السكر التراكمي', en: 'HbA1c', unit: '%', decimals: 1, match: ['السكر التراكمي', 'التراكمي', 'hba1c'] },
+  { section: 'blood', ar: 'الكوليسترول', en: 'Cholesterol', unit: 'mg/dL', decimals: 0, match: ['الكوليسترول', 'cholesterol'] },
+  { section: 'blood', ar: 'الهيموغلوبين', en: 'Hemoglobin', unit: 'g/dL', decimals: 1, match: ['الهيموغلوبين', 'hemoglobin', 'haemoglobin'] },
+
+  // ---------- اللياقة ----------
+  // تكوين الجسم
+  { section: 'body', ar: 'الطول', en: 'Height', unit: 'cm', decimals: 0, match: ['الطول', 'height'] },
+  { section: 'body', ar: 'الوزن', en: 'WT', unit: 'kg', decimals: 1, match: ['الوزن', 'weight', 'wt'] },
+  { section: 'body', ar: 'مؤشر كتلة الجسم', en: 'BMI', unit: '', decimals: 1, match: ['مؤشر كتلة الجسم', 'bmi'] },
+  { section: 'body', ar: 'مؤشر كتلة الدهون', en: 'BFMI', unit: 'kg/m²', decimals: 1, match: ['مؤشر كتلة الدهون', 'bfmi'] },
+  // العضلات والدهون
+  { section: 'muscle', ar: 'كتلة العضلات الهيكلية', en: 'SMM', unit: 'kg', decimals: 1, match: ['كتلة العضلات', 'smm', 'muscle'] },
+  { section: 'muscle', ar: 'كتلة الدهون', en: 'BFM', unit: 'kg', decimals: 1, match: ['كتلة الدهون', 'bfm', 'fat mass'] },
+  { section: 'muscle', ar: 'نسبة الدهون', en: 'PBF', unit: '%', decimals: 1, match: ['نسبة الدهون', 'pbf', 'body fat %', 'fat percent'] },
+  // الأيض والعمر
+  { section: 'metab', ar: 'معدل الأيض الأساسي', en: 'BMR', unit: 'kcal', decimals: 0, match: ['الأيض الأساسي', 'bmr'] },
+  { section: 'metab', ar: 'العمر الأيضي', en: 'Metabolic Age', unit: 'سنة', decimals: 0, match: ['العمر الأيضي', 'metabolic age'] },
+  { section: 'metab', ar: 'الدهون الحشوية', en: 'VFL', unit: '', decimals: 0, match: ['الحشوية', 'vfl', 'visceral'] },
+  { section: 'metab', ar: 'إجمالي ماء الجسم', en: 'TBW', unit: 'L', decimals: 1, match: ['ماء الجسم', 'tbw', 'water'] },
+  { section: 'metab', ar: 'العمر', en: 'Age', unit: 'سنة', decimals: 0, match: ['العمر', 'age'] },
+  // اختبارات اللياقة
+  { section: 'tests', ar: 'الجري', en: 'Run', unit: '', decimals: 0, match: ['الجري', 'run'] },
+  { section: 'tests', ar: 'الضغط', en: 'Push-ups', unit: '', decimals: 0, match: ['تمرين الضغط', 'الضغط', 'push'] },
+  { section: 'tests', ar: 'البلانك', en: 'Plank', unit: '', decimals: 0, match: ['البلانك', 'plank'] }
+];
+// ==================================================================
+
+const app = document.getElementById('app');
+const state = { tab: 'medical', open: new Set(['vitals', 'body']) };   // kept when VA sends new data
+let current = [];                                            // [{ v: variableConfig, value }]
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function fmt(value, decimals) {
+  if (value === null || value === undefined || value === '') return '–';
+  const n = Number(value);
+  if (isNaN(n)) return esc(value);
+  return n.toLocaleString('en-US', {
+    minimumFractionDigits: decimals ?? 0, maximumFractionDigits: decimals ?? 2, useGrouping: false
+  });
+}
+
+function render() {
+  const tabs = TABS.map(t => `
+    <button class="tab" role="tab" data-tab="${t.id}" aria-selected="${state.tab === t.id}">${t.label}</button>`).join('');
+
+  const sections = SECTIONS.filter(s => s.tab === state.tab).map(s => {
+    const items = current.filter(x => x.v.section === s.id);
+    if (!items.length) return '';
+    const open = state.open.has(s.id);
+    const rows = items.map(({ v, value }) => `
+      <div class="row">
+        <div class="name">${esc(v.ar)}${v.en ? `<span class="en">(${esc(v.en)})</span>` : ''}</div>
+        <div class="value">${fmt(value, v.decimals)}${v.unit ? `<span class="unit">${esc(v.unit)}</span>` : ''}</div>
+      </div>`).join('');
+    return `
+      <div class="section ${open ? 'open' : ''}">
+        <button class="sec-head" data-sec="${s.id}" aria-expanded="${open}">
+          <span class="title">${s.label}</span>
+          <span class="count">عدد المؤشرات<b>${items.length}</b></span>
+          <span class="chev">▾</span>
+        </button>
+        <div class="sec-body">
+          <div class="row head"><div>الاسم</div><div>القيمة</div></div>
+          ${rows}
+        </div>
+      </div>`;
+  }).join('');
+
+  app.innerHTML = `<div class="tabs" role="tablist">${tabs}</div>${sections || '<div class="msg">لا توجد بيانات في هذا التبويب</div>'}`;
+}
+
+app.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  const sec = e.target.closest('[data-sec]');
+  if (tab) state.tab = tab.dataset.tab;
+  if (sec) state.open.has(sec.dataset.sec) ? state.open.delete(sec.dataset.sec) : state.open.add(sec.dataset.sec);
+  if (tab || sec) render();
+});
+
+// ------------------------------------------------------------------
+// Match each VA column to a variable in the config (longest word wins,
+// so "العمر الأيضي" is not mistaken for "العمر").
+// ------------------------------------------------------------------
+function matchColumns(columns) {
+  const used = new Set(), result = [];
+  columns.forEach((col, i) => {
+    if (col.usage === 'brush') return;
+    const text = `${col.label || ''} ${col.name || ''}`.toLowerCase();
+    let best = null, bestLen = 0;
+    for (const v of VARIABLES) {
+      if (used.has(v)) continue;
+      for (const w of v.match) if (text.includes(w.toLowerCase()) && w.length > bestLen) { best = v; bestLen = w.length; }
+    }
+    if (best) { used.add(best); result.push({ i, v: best }); }
+    else if (col.type === 'number') {         // unknown measure -> "مؤشرات أخرى"
+      result.push({ i, v: { section: 'other', ar: col.label || col.name, en: '', unit: '', decimals: undefined } });
+    }
+    // unknown text columns (e.g. emp no) are not shown
+  });
+  // keep the order defined in the config
+  return result.sort((a, b) => {
+    const ia = VARIABLES.indexOf(a.v), ib = VARIABLES.indexOf(b.v);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+  });
+}
+
+function showMessage(text, resultName) {
+  app.innerHTML = `<div class="msg">${text}</div>`;
+  if (resultName && window.parent !== window) window.parent.postMessage({ resultName, message: text }, '*');
+}
+
+window.addEventListener('message', event => {
+  const msg = event.data;
+  if (!msg || typeof msg !== 'object' || !('resultName' in msg)) return;
+  const columns = msg.columns || [], rows = msg.data || [];
+  const mapped = matchColumns(columns);
+
+  if (!rows.length || !mapped.length) {
+    showMessage('أضف المتغيرات (مثل ضغط الدم، السكر، الطول، الوزن) إلى هذا العنصر', msg.resultName);
+    return;
+  }
+  // selected row if linked to a selection, otherwise the first row
+  const brush = columns.findIndex(c => c.usage === 'brush');
+  const row = (brush >= 0 && rows.find(r => r[brush] > 0)) || rows[0];
+
+  current = mapped.map(({ i, v }) => ({ v, value: row[i] }));
+  render();
+});
+
+// Sample when opened directly (outside VA)
+if (window.parent === window) {
+  const sample = { 'ضغط الدم الانقباضي': 122, 'ضغط الدم الانبساطي': 78, 'معدل النبض': 68, 'تشبع الأكسجين': 98, 'درجة الحرارة': 36.8,
+    'السكر الصائم': 92, 'السكر التراكمي': 5.4, 'الكوليسترول': 180, 'الهيموغلوبين': 14.6,
+    'الطول': 178, 'الوزن': 79.4, 'مؤشر كتلة الجسم': 25.1, 'مؤشر كتلة الدهون': 4.9,
+    'كتلة العضلات الهيكلية': 36.2, 'كتلة الدهون': 15.3, 'نسبة الدهون': 19.3,
+    'معدل الأيض الأساسي': 1750, 'العمر الأيضي': 31, 'الدهون الحشوية': 7, 'إجمالي ماء الجسم': 46.1, 'العمر': 34,
+    'الجري': 88, 'الضغط': 92, 'البلانك': 85 };
+  current = VARIABLES.map(v => ({ v, value: sample[v.ar] }));
+  render();
+}
+</script>
+</body>
+</html>
