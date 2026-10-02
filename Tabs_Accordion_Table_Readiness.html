@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Profile Tabs — SAS VA Data-Driven Content</title>
+<!--
+  SAS Visual Analytics — Data-Driven Content     Tabs_Accordion_Table  v2 2026-10-01
+  ================================================================================
+  ONE PERSON = ONE ROW. Every indicator is its own column (wide format). The
+  object reads the columns by NAME, places each one in a tab + section using the
+  CONFIG below, and builds:   الاسم | القيمة | فئة درجة اللياقة
+
+  DATA ROLES
+  ----------
+  Assign the attributes to the "Variables" role in any order:
+    - numeric indicators (مؤشر كتلة الجسم, الهيموجلوبين, ...) as MEASURES
+    - the فئة ... columns (فئة كتلة العضلات, فئة درجة اللياقة, فئة نسبة الدهون)
+      as CATEGORIES
+    - also add the person ID as a category so VA sends one row per person.
+  Filter the object to one person (e.g. an action from a list table). If VA
+  sends several rows, the first one is shown (?row=N to pick another).
+  Measures with no category are SUMMED by VA across everyone - always filter.
+
+  PILL (فئة) FOR EACH ROW
+  -----------------------
+    1. if the indicator has a category column (cat:) -> that value is shown
+    2. else if it has a reference range (range:)     -> منخفض / طبيعي / مرتفع
+       (within 10% outside the limit -> "قليلاً")
+    3. else -> a quiet dash
+  The ranges below are general ADULT MALE reference values. Replace them with
+  your lab's / medical team's ranges before using this for real decisions.
+
+  URL PARAMETERS
+  --------------
+    ?headers=الاسم|القيمة|فئة درجة اللياقة   table header labels
+    ?countlabel=عدد المؤشرات                 text before the count
+    ?open=first     first | all | none   which sections start expanded
+    ?tab=الطبي      tab selected on load
+    ?row=1          which data row to show (1-based) if VA sends several
+    ?others=0       hide columns that are not in CONFIG
+    ?colors=طبيعي:grn|مرتفع:red    pill colour overrides (grn|amb|org|red|gry)
+    ?size=14        base font size in px
+    ?font=0         skip the Google Fonts request
+    ?debug=1        show which column matched which indicator
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="gfont" rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<style>
+  :root{
+    --mint:#00C993; --mint-2:#2BE5A8;
+    --head:#8FB3A6; --text:#DCEFE8; --name:#F3FAF6; --muted:#7E948C;
+    --panel:rgba(10,24,20,.55); --panel-line:rgba(255,255,255,.14);
+    --row:rgba(255,255,255,.025); --row-line:rgba(255,255,255,.06);
+    --size:14px;
+    --red-bg:rgba(196,70,60,.16);   --red-line:#C4463C;   --red-tx:#E88178;
+    --grn-bg:rgba(23,150,110,.14);  --grn-line:#1FB383;   --grn-tx:#43D6A2;
+    --amb-bg:rgba(196,140,30,.14);  --amb-line:#D4A22A;   --amb-tx:#E9C055;
+    --org-bg:rgba(196,110,30,.15);  --org-line:#C4781E;   --org-tx:#E39A3A;
+    --gry-bg:rgba(255,255,255,.05); --gry-line:rgba(255,255,255,.25); --gry-tx:#B9C9C3;
+    --ar:"Tajawal","Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:transparent;color:var(--text);font-family:var(--ar);
+       overflow:hidden;-webkit-font-smoothing:antialiased}
+  #root{height:100%;width:100%;display:flex;flex-direction:column;
+        font-size:var(--size);padding:2px}
+
+  #tabs{flex:none;display:flex;gap:.6em;padding:.45em;border-radius:999px;
+        border:1px solid var(--panel-line);background:var(--panel);margin-bottom:.9em}
+  #tabs button{flex:1 1 0;font-family:inherit;font-size:1em;font-weight:700;
+        height:2.75em;border-radius:999px;cursor:pointer;color:var(--text);
+        background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.12);
+        transition:background .15s,border-color .15s,box-shadow .15s}
+  #tabs button:hover{border-color:rgba(0,201,147,.5)}
+  #tabs button.on{background:rgba(0,201,147,.16);border-color:var(--mint);
+        color:var(--name);box-shadow:0 0 14px rgba(0,201,147,.25) inset}
+  #tabs button:focus-visible,.acc-h:focus-visible{outline:2px solid var(--mint-2);outline-offset:2px}
+
+  #body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding-inline-end:2px;
+        scrollbar-width:thin;scrollbar-color:rgba(0,201,147,.35) transparent}
+  #body::-webkit-scrollbar{width:6px}
+  #body::-webkit-scrollbar-thumb{background:rgba(0,201,147,.35);border-radius:6px}
+
+  .acc{border:1px solid var(--panel-line);border-radius:14px;background:var(--panel);
+       margin-bottom:.65em;overflow:hidden}
+  .acc-h{width:100%;display:flex;align-items:center;gap:.9em;padding:.95em 1.1em;
+         background:transparent;border:0;color:inherit;font-family:inherit;
+         font-size:1em;cursor:pointer;text-align:right}
+  .acc-t{font-weight:800;font-size:1.12em;color:var(--name)}
+  .acc-c{color:var(--muted);font-size:.85em;display:inline-flex;align-items:baseline;gap:.5em}
+  .acc-c b{color:var(--name);font-size:1.25em;font-weight:800}
+  .acc-x{margin-inline-start:auto;width:1em;height:1em;color:var(--mint);transition:transform .2s}
+  .acc.open .acc-x{transform:rotate(180deg)}
+  .acc-b{display:none;border-top:1px solid var(--row-line);padding:.2em .45em .5em}
+  .acc.open .acc-b{display:block}
+
+  table{width:100%;border-collapse:separate;border-spacing:0 .35em;table-layout:fixed}
+  col.c-name{width:45%} col.c-val{width:30%} col.c-cat{width:25%}
+  thead th{color:var(--muted);font-weight:500;font-size:.92em;padding:.55em 1em .2em;white-space:nowrap}
+  th.n,td.n,th.v,td.v{text-align:right}
+  th.k,td.k{text-align:center}
+  tbody td{padding:.95em 1em;background:var(--row);border-top:1px solid var(--row-line);
+           border-bottom:1px solid var(--row-line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  tbody td:first-child{border-right:1px solid var(--row-line);border-radius:0 8px 8px 0}
+  tbody td:last-child{border-left:1px solid var(--row-line);border-radius:8px 0 0 8px}
+  td.n{font-weight:700;font-size:1.12em;color:var(--name)}
+  td.n .ab{color:var(--muted);font-weight:500;margin-inline-start:.3em}
+  td.v{font-weight:800;font-size:1.28em;color:var(--name)}
+  td.v .u{font-weight:700;font-size:.82em;color:var(--text)}
+  tbody tr:hover td{background:rgba(0,201,147,.05)}
+
+  .pill{display:inline-flex;align-items:center;gap:.45em;padding:.22em .85em;
+        border-radius:999px;font-size:.88em;font-weight:700;border:1.5px solid;
+        white-space:nowrap;line-height:1.4}
+  .pill::before{content:"";width:.38em;height:.38em;border-radius:50%;background:currentColor}
+  .pill.red{background:var(--red-bg);border-color:var(--red-line);color:var(--red-tx)}
+  .pill.grn{background:var(--grn-bg);border-color:var(--grn-line);color:var(--grn-tx)}
+  .pill.amb{background:var(--amb-bg);border-color:var(--amb-line);color:var(--amb-tx)}
+  .pill.org{background:var(--org-bg);border-color:var(--org-line);color:var(--org-tx)}
+  .pill.gry{background:var(--gry-bg);border-color:var(--gry-line);color:var(--gry-tx)}
+  .dash{color:var(--muted);opacity:.5}
+
+  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+       color:var(--muted);font-size:12.5px;pointer-events:none}
+  #dbg{position:absolute;inset:0;overflow:auto;padding:10px 12px;z-index:9;
+       font:11.5px/1.5 ui-monospace,Consolas,monospace;color:#CFEEE2;
+       background:rgba(4,18,13,.97);direction:ltr;text-align:left}
+  #dbg h4{margin:8px 0 4px;font-size:12px;color:var(--mint)}
+  #dbg table{border-collapse:collapse;margin:4px 0;width:100%;table-layout:auto}
+  #dbg td,#dbg th{border:1px solid rgba(0,201,147,.25);padding:2px 6px;text-align:left;
+                  background:none;border-radius:0;white-space:normal}
+  #dbg th{color:var(--mint);font-weight:600}
+  #dbg .bad{color:#FF6B6B} #dbg .ok{color:var(--mint)}
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="tabs" role="tablist"></div>
+  <div id="body"></div>
+</div>
+<div id="msg">في انتظار البيانات…</div>
+
+<script>
+(function(){
+  "use strict";
+  var VERSION = "Tabs_Accordion_Table v2 2026-10-01";
+  console.log("[" + VERSION + "]");
+
+  /* =======================================================================
+     CONFIG — one entry per indicator, in display order.
+       col    : the VA column label (matching ignores spaces, *, أ/إ/آ, ة/ه, ى/ي)
+       alias  : other spellings of the column name (optional)
+       tab    : tab it appears in
+       group  : collapsible section
+       label  : name shown (defaults to col)
+       abbr   : shown muted in (…)
+       unit   : shown after the value
+       dec    : decimals (default 2, trailing zeros dropped)
+       cat    : column that holds this row's category text
+       range  : [low, high] reference range -> computed pill
+       vsAge  : compare against the actual-age column (biological age)
+       hide   : column is read but not shown as a row
+     ======================================================================= */
+  var CONFIG = [
+    /* ---------------- الطبي ---------------- */
+    {col:"مؤشر كتلة الجسم",       tab:"الطبي", group:"تكوين الجسم", abbr:"BMI",  unit:"kg/m²", dec:1, range:[18.5,24.9]},
+    {col:"مؤشر كتلة الدهون",      tab:"الطبي", group:"تكوين الجسم", abbr:"BFMI", unit:"kg/m²", dec:1, range:[3,6]},
+    {col:"نسبة الخصر إلى الورك",   tab:"الطبي", group:"تكوين الجسم", abbr:"WHR",  dec:2, range:[0,0.90]},
+
+    {col:"كتلة العضلات الهيكلية",  tab:"الطبي", group:"العضلات والدهون", abbr:"SMM", unit:"kg", dec:1, cat:"فئة كتلة العضلات"},
+    {col:"نسبة دهون الجسم %",      tab:"الطبي", group:"العضلات والدهون", label:"نسبة دهون الجسم", abbr:"PBF", unit:"%", dec:1, cat:"فئة نسبة الدهون"},
+    {col:"إجمالي ماء الجسم",       tab:"الطبي", group:"العضلات والدهون", abbr:"TBW", unit:"L", dec:1},
+
+    {col:"معدل الأيض الأساسي",     tab:"الطبي", group:"الأيض والعمر", abbr:"BMR", unit:"kcal", dec:0},
+    {col:"العمر الفعلي",           tab:"الطبي", group:"الأيض والعمر", unit:"سنة", dec:0},
+    {col:"عمر الجسم (البيولوجي)",  tab:"الطبي", group:"الأيض والعمر", label:"عمر الجسم (البيولوجي)", unit:"سنة", dec:0, vsAge:"العمر الفعلي"},
+
+    {col:"كرات الدم الحمراء",      tab:"الطبي", group:"خلايا الدم الحمراء", abbr:"RBC",  unit:"10⁶/µL", dec:2, range:[4.5,5.9]},
+    {col:"الهيموجلوبين",           tab:"الطبي", group:"خلايا الدم الحمراء", abbr:"HGB",  unit:"g/dL",   dec:1, range:[13.5,17.5]},
+    {col:"الهيماتوكريت",           tab:"الطبي", group:"خلايا الدم الحمراء", abbr:"HCT",  unit:"%",      dec:1, range:[40,50]},
+    {col:"متوسط حجم الخلية (MCV)", tab:"الطبي", group:"خلايا الدم الحمراء", label:"متوسط حجم الخلية", abbr:"MCV", unit:"fL", dec:1, range:[80,100]},
+    {col:"متوسط هيموجلوبين الخلية (MCH)", tab:"الطبي", group:"خلايا الدم الحمراء", label:"متوسط هيموجلوبين الخلية", abbr:"MCH", unit:"pg", dec:1, range:[27,33]},
+    {col:"تركيز الهيموجلوبين في الخلية (MCHC)", tab:"الطبي", group:"خلايا الدم الحمراء", label:"تركيز الهيموجلوبين في الخلية", abbr:"MCHC", unit:"g/dL", dec:1, range:[32,36]},
+    {col:"عرض توزيع الكرات الحمراء (RDW)",    tab:"الطبي", group:"خلايا الدم الحمراء", label:"عرض توزيع الكرات الحمراء", abbr:"RDW-CV", unit:"%",  dec:1, range:[11.5,14.5]},
+    {col:"عرض توزيع الكرات الحمراء (RDW-SD)", tab:"الطبي", group:"خلايا الدم الحمراء", label:"عرض توزيع الكرات الحمراء", abbr:"RDW-SD", unit:"fL", dec:1, range:[39,46]},
+
+    {col:"كرات الدم البيضاء",       tab:"الطبي", group:"خلايا الدم البيضاء", abbr:"WBC", unit:"10³/µL", dec:2, range:[4.0,11.0]},
+    {col:"العدلات %",               tab:"الطبي", group:"خلايا الدم البيضاء", label:"العدلات", abbr:"NEUT%", unit:"%",      dec:1, range:[40,70]},
+    {col:"العدلات (عدد)",           tab:"الطبي", group:"خلايا الدم البيضاء", label:"العدلات", abbr:"NEUT#", unit:"10³/µL", dec:2, range:[2.0,7.0]},
+    {col:"الخلايا الليمفاوية %",     tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الليمفاوية", abbr:"LYM%", unit:"%",      dec:1, range:[20,40]},
+    {col:"الخلايا الليمفاوية (عدد)", tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الليمفاوية", abbr:"LYM#", unit:"10³/µL", dec:2, range:[1.0,3.0]},
+    {col:"الخلايا الوحيدة %",        tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الوحيدة", abbr:"MONO%", unit:"%",      dec:1, range:[2,10]},
+    {col:"الخلايا الوحيدة (عدد)",    tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الوحيدة", abbr:"MONO#", unit:"10³/µL", dec:2, range:[0.2,1.0]},
+    {col:"الخلايا الحمضية %",        tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الحمضية", abbr:"EOS%", unit:"%",      dec:1, range:[1,6]},
+    {col:"الخلايا الحمضية (عدد)",    tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا الحمضية", abbr:"EOS#", unit:"10³/µL", dec:2, range:[0.0,0.5]},
+    {col:"الخلايا القاعدية %",       tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا القاعدية", abbr:"BASO%", unit:"%",      dec:1, range:[0,2]},
+    {col:"الخلايا القاعدية (عدد)",   tab:"الطبي", group:"خلايا الدم البيضاء", label:"الخلايا القاعدية", abbr:"BASO#", unit:"10³/µL", dec:2, range:[0.0,0.2]},
+
+    {col:"الصفائح الدموية",         tab:"الطبي", group:"الصفائح الدموية", abbr:"PLT", unit:"10³/µL", dec:0, range:[150,400]},
+
+    /* ---------------- اللياقة ---------------- */
+    {col:"درجة اللياقة",            tab:"اللياقة", group:"درجة اللياقة", dec:1, cat:"فئة درجة اللياقة"},
+    {col:"البلانك المتوقع",          tab:"اللياقة", group:"الأداء المتوقع", abbr:"Plank",    unit:"sec",  dec:0},
+    {col:"الضغط المتوقع",            tab:"اللياقة", group:"الأداء المتوقع", abbr:"Push-ups", unit:"reps", dec:0},
+    {col:"الجري المتوقع",            tab:"اللياقة", group:"الأداء المتوقع", abbr:"Run",      dec:2},
+
+    /* ---------------- read but not shown as rows ---------------- */
+    {col:"فئة كتلة العضلات",  hide:true},
+    {col:"فئة نسبة الدهون",   hide:true},
+    {col:"فئة درجة اللياقة",  hide:true},
+    {col:"تقسيم البيانات (تدريب / اختبار)", hide:true}
+  ];
+  var OTHERS_TAB = "الطبي", OTHERS_GROUP = "مؤشرات أخرى";
+
+  /* ---------- URL params ---------- */
+  var Q = {};
+  location.search.replace(/^\?/,"").split("&").forEach(function(kv){
+    if(!kv) return;
+    var i = kv.indexOf("=");
+    Q[decodeURIComponent(i<0?kv:kv.slice(0,i))] = i<0?"":decodeURIComponent(kv.slice(i+1).replace(/\+/g," "));
+  });
+  if (Q.font === "0"){ var g=document.getElementById("gfont"); if(g) g.remove(); }
+  if (Q.size) document.documentElement.style.setProperty("--size", parseInt(Q.size,10)+"px");
+
+  var HEADERS    = Q.headers ? Q.headers.split("|") : ["الاسم","القيمة","فئة درجة اللياقة"];
+  var COUNTLABEL = Q.countlabel !== undefined ? Q.countlabel : "عدد المؤشرات";
+  var OPENMODE   = (Q.open || "first").toLowerCase();
+  var ROWPICK    = Q.row ? Math.max(1, parseInt(Q.row,10)||1) - 1 : 0;
+  var SHOWOTHERS = Q.others !== "0";
+  var DEBUG      = Q.debug === "1";
+  var COLORMAP   = {};
+  if (Q.colors) Q.colors.split("|").forEach(function(p){
+    var i = p.lastIndexOf(":"); if (i>0) COLORMAP[p.slice(0,i).trim()] = p.slice(i+1).trim();
+  });
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function isMissing(v){
+    if (v===null || v===undefined) return true;
+    if (typeof v==="number") return !isFinite(v);
+    var s = String(v).trim(); return s==="" || s.toLowerCase()==="(missing)" || s===".";
+  }
+  function norm(s){
+    return String(s==null?"":s)
+      .replace(/[\u064B-\u0652\u0640]/g,"")
+      .replace(/[أإآ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي")
+      .replace(/[\s*_\-–]/g,"").toLowerCase();
+  }
+  function toNum(v){
+    if (typeof v==="number") return isFinite(v)?v:NaN;
+    var s = String(v).replace(/,/g,"").trim();
+    return /^-?\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;
+  }
+
+  /* pill colour from the category text */
+  function pillClass(v){
+    var s = String(v).trim();
+    if (COLORMAP[s]) return COLORMAP[s];
+    if (/قليل|طفيف|بسيط|حدي|متوسط|مقبول|slight|border|moderate|average/i.test(s)) return "amb";
+    if (/طبيعي|مثالي|ممتاز|جيد|سليم|ضمن|اصغر|أصغر|مطابق|normal|good|excellent|optimal/i.test(s)) return "grn";
+    if (/جدا|جداً|خطر|خطير|حرج|سمنة|very|critical|obese/i.test(s)) return "red";
+    if (/مرتفع|منخفض|عالي|زائد|نقص|ضعيف|اكبر|أكبر|high|low|over|under|poor|weak/i.test(s)) return "org";
+    return "gry";
+  }
+  function rangeCat(x, r){
+    var lo=r[0], hi=r[1];
+    if (x < lo) return (lo>0 && (lo-x)/lo <= .10) ? "منخفض قليلاً" : "منخفض";
+    if (x > hi) return (hi>0 && (x-hi)/hi <= .10) ? "مرتفع قليلاً" : "مرتفع";
+    return "طبيعي";
+  }
+  function ageCat(bio, actual){
+    var d = bio - actual;
+    if (d < 0)  return "أصغر من العمر الفعلي";
+    if (d === 0) return "مطابق للعمر الفعلي";
+    if (d <= 3) return "أكبر قليلاً";
+    return "أكبر من العمر الفعلي";
+  }
+
+  function fmtVal(v, dec){
+    var n = toNum(v);
+    if (isNaN(n)) return esc(String(v).trim());
+    var d = (dec===undefined) ? 2 : dec;
+    return n.toLocaleString("en-US",{minimumFractionDigits:0, maximumFractionDigits:d});
+  }
+
+  /* ---------- state ---------- */
+  var TABS=[], ACTIVE=Q.tab||null, OPEN={}, OPEN_INIT={}, LAST={};
+
+  function build(m){
+    var cols = m.columns||[], data = m.data||[];
+    var row = data.length ? data[Math.min(ROWPICK, data.length-1)] : null;
+
+    // column lookup by normalized label and name
+    var colIdx = {};
+    cols.forEach(function(c,i){
+      [c.label, c.name].forEach(function(k){ var n=norm(k); if (n && colIdx[n]===undefined) colIdx[n]=i; });
+    });
+    function find(key, alias){
+      var keys=[key].concat(alias||[]);
+      for (var i=0;i<keys.length;i++){ var n=norm(keys[i]); if (colIdx[n]!==undefined) return colIdx[n]; }
+      return -1;
+    }
+    function val(key, alias){ var i=find(key, alias); return (i<0||!row) ? null : row[i]; }
+
+    var used = {}, items = [];
+    CONFIG.forEach(function(c){
+      var i = find(c.col, c.alias);
+      c._idx = i;
+      if (i>=0) used[i]=true;
+      if (c.cat){ var ci=find(c.cat); if(ci>=0) used[ci]=true; }
+      if (c.hide || i<0) return;
+      var v = row ? row[i] : null, cat = null;
+      if (c.cat){ var cv = val(c.cat); if (!isMissing(cv)) cat = String(cv).trim(); }
+      if (!cat && c.range && !isNaN(toNum(v))) cat = rangeCat(toNum(v), c.range);
+      if (!cat && c.vsAge){
+        var a = toNum(val(c.vsAge)), b = toNum(v);
+        if (!isNaN(a) && !isNaN(b)) cat = ageCat(Math.round(b), Math.round(a));
+      }
+      items.push({tab:c.tab, group:c.group, label:c.label||c.col, abbr:c.abbr, unit:c.unit,
+                  value:v, dec:c.dec, cat:cat});
+    });
+    if (SHOWOTHERS){
+      cols.forEach(function(c,i){
+        if (used[i]) return;
+        var lbl = c.label||c.name||("عمود "+(i+1));
+        if (/^(id|person|emp)/i.test(c.name||"") ) return;
+        items.push({tab:OTHERS_TAB, group:OTHERS_GROUP, label:lbl, value:row?row[i]:null, cat:null});
+      });
+    }
+
+    var tIdx = {}; TABS = [];
+    items.forEach(function(it){
+      if (!tIdx[it.tab]){ tIdx[it.tab]={name:it.tab, groups:[], g:{}}; TABS.push(tIdx[it.tab]); }
+      var T=tIdx[it.tab];
+      if (!T.g[it.group]){ T.g[it.group]={name:it.group, rows:[]}; T.groups.push(T.g[it.group]); }
+      T.g[it.group].rows.push(it);
+    });
+    if (!ACTIVE || !tIdx[ACTIVE]) ACTIVE = TABS.length ? TABS[0].name : null;
+    TABS.forEach(function(T){
+      T.groups.forEach(function(G,gi){
+        var key=T.name+"\u0001"+G.name;
+        if (OPEN_INIT[key]) return;
+        OPEN_INIT[key]=true;
+        OPEN[key] = OPENMODE==="all" || (OPENMODE==="first" && gi===0);
+      });
+    });
+    LAST = {cols:cols, data:data, used:used};
+  }
+
+  var CHEV = '<svg class="acc-x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
+
+  function rowHTML(r){
+    var abbr = r.abbr ? ' <bdi class="ab">('+esc(r.abbr)+')</bdi>' : "";
+    var val = isMissing(r.value) ? '<span class="dash">—</span>'
+      : '<bdi dir="ltr">'+fmtVal(r.value, r.dec)+(r.unit && !isNaN(toNum(r.value)) ? ' <span class="u">'+esc(r.unit)+'</span>' : "")+'</bdi>';
+    var cat = r.cat ? '<span class="pill '+pillClass(r.cat)+'">'+esc(r.cat)+'</span>' : '<span class="dash">—</span>';
+    return "<tr><td class='n'>"+esc(r.label)+abbr+"</td><td class='v'>"+val+"</td><td class='k'>"+cat+"</td></tr>";
+  }
+
+  function render(){
+    var tabsEl=document.getElementById("tabs"), bodyEl=document.getElementById("body");
+    var has = TABS.length && LAST.data && LAST.data.length;
+    document.getElementById("msg").style.display = has ? "none" : "flex";
+    if (!has){ tabsEl.innerHTML=""; bodyEl.innerHTML=""; tabsEl.style.display="none"; return; }
+    tabsEl.style.display="";
+    tabsEl.innerHTML = TABS.map(function(T){
+      var on=T.name===ACTIVE;
+      return "<button role='tab' aria-selected='"+on+"' class='"+(on?"on":"")+"' data-tab='"+esc(T.name)+"'>"+esc(T.name)+"</button>";
+    }).join("");
+
+    var T = TABS.filter(function(t){ return t.name===ACTIVE; })[0];
+    var thead = "<colgroup><col class='c-name'><col class='c-val'><col class='c-cat'></colgroup>"+
+      "<thead><tr><th class='n'>"+esc(HEADERS[0]||"")+"</th><th class='v'>"+esc(HEADERS[1]||"")+
+      "</th><th class='k'>"+esc(HEADERS[2]||"")+"</th></tr></thead>";
+    bodyEl.innerHTML = T.groups.map(function(G){
+      var key=T.name+"\u0001"+G.name, open=!!OPEN[key];
+      return "<section class='acc"+(open?" open":"")+"'>"+
+        "<button class='acc-h' aria-expanded='"+open+"' data-key='"+esc(key)+"'>"+
+          "<span class='acc-t'>"+esc(G.name)+"</span>"+
+          (COUNTLABEL!=="" ? "<span class='acc-c'>"+esc(COUNTLABEL)+" <b>"+G.rows.length+"</b></span>" : "")+
+          CHEV+"</button>"+
+        "<div class='acc-b'><table>"+thead+"<tbody>"+G.rows.map(rowHTML).join("")+"</tbody></table></div></section>";
+    }).join("");
+  }
+
+  document.addEventListener("click", function(ev){
+    var tb = ev.target.closest("#tabs button[data-tab]");
+    if (tb){ ACTIVE=tb.getAttribute("data-tab"); render(); document.getElementById("body").scrollTop=0; return; }
+    var ah = ev.target.closest(".acc-h[data-key]");
+    if (ah){ var k=ah.getAttribute("data-key"); OPEN[k]=!OPEN[k]; render(); }
+  });
+
+  function dump(m){
+    var d=document.getElementById("dbg");
+    if(!d){ d=document.createElement("div"); d.id="dbg"; document.body.appendChild(d); }
+    var cols=m.columns||[], data=m.data||[];
+    var h="<h4>Tabs_Accordion_Table debug</h4>version: <b class='ok'>"+VERSION+"</b><br>";
+    h+="rows sent: <b>"+data.length+"</b> (showing row "+(Math.min(ROWPICK,Math.max(0,data.length-1))+1)+")";
+    if (data.length>1) h+=" <span class='bad'>more than one row - filter the object to one person</span>";
+    h+="<h4>CONFIG indicators</h4><table><tr><th>indicator</th><th>tab / group</th><th>column found</th><th>value</th></tr>";
+    CONFIG.forEach(function(c){
+      var ok=c._idx>=0;
+      h+="<tr><td>"+esc(c.col)+"</td><td>"+esc(c.hide?"(hidden)":c.tab+" / "+c.group)+"</td><td class='"+(ok?"ok":"bad")+"'>"+
+         (ok?"#"+(c._idx+1)+" "+esc(cols[c._idx].label||cols[c._idx].name):"NOT FOUND")+"</td><td>"+
+         (ok&&data.length?esc(String(data[Math.min(ROWPICK,data.length-1)][c._idx])):"")+"</td></tr>";
+    });
+    h+="</table><h4>Columns not in CONFIG</h4><table><tr><th>#</th><th>label</th><th>name</th><th>usage</th></tr>";
+    var any=false;
+    cols.forEach(function(c,i){ if(LAST.used[i]) return; any=true;
+      h+="<tr><td>"+(i+1)+"</td><td>"+esc(c.label)+"</td><td>"+esc(c.name)+"</td><td>"+esc(c.usage||"")+"</td></tr>"; });
+    if(!any) h+="<tr><td colspan='4' class='ok'>none</td></tr>";
+    d.innerHTML=h+"</table>";
+  }
+
+  function onMessage(ev){
+    var m=ev.data;
+    if (!m || typeof m!=="object" || !m.columns || !m.data) return;
+    build(m);
+    if (DEBUG){ dump(m); return; }
+    render();
+  }
+  window.addEventListener("message", onMessage, false);
+
+  /* standalone preview — never runs inside VA */
+  if (window.parent === window){
+    var sample = [
+      ["رقم الموظف","1001"],["مؤشر كتلة الجسم",25.1],["مؤشر كتلة الدهون",4.9],["كتلة العضلات الهيكلية",36.2],
+      ["فئة كتلة العضلات","طبيعي"],["درجة اللياقة",78],["فئة درجة اللياقة","جيد"],["إجمالي ماء الجسم",45.1],
+      ["نسبة دهون الجسم %",19.6],["فئة نسبة الدهون","مرتفع قليلاً"],["معدل الأيض الأساسي",1742],
+      ["نسبة الخصر إلى الورك",0.88],["العمر الفعلي",36],["عمر الجسم (البيولوجي)*",34],
+      ["الخلايا القاعدية %",0.6],["الخلايا القاعدية (عدد)",0.04],["الخلايا الحمضية %",2.8],["الخلايا الحمضية (عدد)",0.18],
+      ["الهيماتوكريت",44.2],["الهيموجلوبين",14.9],["الخلايا الليمفاوية %",33.5],["الخلايا الليمفاوية (عدد)",2.15],
+      ["تركيز الهيموجلوبين في الخلية (MCHC)",33.7],["متوسط هيموجلوبين الخلية (MCH)",29.4],["متوسط حجم الخلية (MCV)",87.3],
+      ["الخلايا الوحيدة %",7.1],["الخلايا الوحيدة (عدد)",0.46],["العدلات %",56],["العدلات (عدد)",3.6],
+      ["الصفائح الدموية",238],["كرات الدم الحمراء",5.07],["عرض توزيع الكرات الحمراء (RDW-SD)",41.8],
+      ["عرض توزيع الكرات الحمراء (RDW)",13.1],["كرات الدم البيضاء",6.42],["تقسيم البيانات (تدريب / اختبار)","تدريب"],
+      ["البلانك المتوقع",95],["الضغط المتوقع",34],["الجري المتوقع",11.4]
+    ];
+    onMessage({data:{
+      resultName:"preview",
+      columns: sample.map(function(p,i){ return {name:(i===0?"id":"c"+i), label:p[0], usage: typeof p[1]==="number"?"quantitative":"categorical"}; }),
+      data: [ sample.map(function(p){ return p[1]; }) ]
+    }});
+  }
+})();
+</script>
+</body>
+</html>
