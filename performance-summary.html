@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Performance Summary - SAS VA Data-Driven Content</title>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #22e39b;
+    --text: #eef6f2;
+    --muted: #b9c7c1;
+    --line: rgba(255,255,255,.16);
+    --num: 'Exo 2', 'Segoe UI', sans-serif;
+    --ar: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { display: grid; place-items: center; padding: 6px; font-family: var(--ar); color: var(--text); }
+
+  .card {
+    width: 100%; max-width: 900px; container-type: inline-size;
+    border-radius: 18px; border: 1px solid var(--line);
+    background:
+      radial-gradient(100% 120% at 100% 0%, rgba(30,90,70,.22), transparent 60%),
+      linear-gradient(160deg, #0d1513, #090f0d 60%, #0c1412);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+    padding: clamp(12px, 2.6cqi, 22px);
+  }
+  .title {
+    display: flex; align-items: center; gap: .55em;
+    font-weight: 700; font-size: clamp(13px, 2.4cqi, 17px);
+    margin-bottom: clamp(10px, 2.4cqi, 18px);
+  }
+  .title .dot { width: .5em; height: .5em; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(8px, 1.8cqi, 14px); }
+  .tile {
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: clamp(10px, 2cqi, 16px);
+    background: linear-gradient(160deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+    display: flex; flex-direction: column; align-items: flex-start;   /* flex-start = right side in RTL */
+    min-height: clamp(110px, 20cqi, 160px);
+  }
+  .icon {
+    width: clamp(28px, 4.6cqi, 38px); aspect-ratio: 1; border-radius: 9px;
+    border: 1.5px solid var(--accent); color: var(--accent);
+    display: grid; place-items: center;
+    background: rgba(34,227,155,.06);
+  }
+  .icon svg { width: 58%; height: 58%; }
+  .value {
+    margin-top: auto; font-family: var(--num); font-weight: 800; color: var(--accent);
+    font-size: clamp(20px, 4cqi, 30px); direction: ltr; line-height: 1.1;
+  }
+  .label { color: var(--muted); font-size: clamp(14px, 2.8cqi, 20px); margin-top: 2px; }
+  .msg { color: var(--muted); text-align: center; font-size: 14px; padding: 1rem; }
+</style>
+</head>
+<body>
+
+<div class="card" id="card"></div>
+
+<script>
+// Simple line icons (stroke uses the tile's accent colour)
+const ICONS = {
+  run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="14" cy="4" r="2"/><path d="M10 21l2-6 3 3v4"/><path d="M8 11l3-3 3 2 2 3h3"/><path d="M12 15l-1-4"/><path d="M8 11l-2 3"/></svg>`,
+  push: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/></svg>`,
+  plank: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/><path d="M12 2v3"/></svg>`
+};
+
+// The three tiles, right to left
+const TILES = [
+  { key: 'run',   label: 'الجري',   words: ['الجري', 'جري', 'run'] },
+  { key: 'push',  label: 'الضغط',   words: ['الضغط', 'ضغط', 'push'] },
+  { key: 'plank', label: 'البلانك', words: ['البلانك', 'بلانك', 'plank'] }
+];
+
+const card = document.getElementById('card');
+
+function fmt(v) {
+  if (v === null || v === undefined || v === '') return '–';
+  const n = Number(v);
+  return isNaN(n) ? String(v) : String(Math.round(n));
+}
+
+function renderCard(scores) {
+  card.innerHTML = `
+    <div class="title"><span class="dot"></span>ملخص الأداء</div>
+    <div class="tiles">
+      ${TILES.map(t => `
+        <div class="tile">
+          <div class="icon">${ICONS[t.key]}</div>
+          <div class="value">${fmt(scores[t.key])}</div>
+          <div class="label">${t.label}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+// ------------------------------------------------------------------
+// SAS VA messaging
+// Assign in the Roles pane (in this order): الجري , الضغط , البلانك
+// Columns are matched by name first, then by assignment order.
+// Any extra category (e.g. emp no) is ignored but can be used for filtering.
+// ------------------------------------------------------------------
+function mapColumns(columns) {
+  const cols = columns.map((c, i) => ({ i, text: `${c.label || ''} ${c.name || ''}`.toLowerCase(), c }))
+                      .filter(x => x.c.usage !== 'brush');
+  const map = {}, used = new Set();
+  for (const t of TILES) {
+    const hit = cols.find(x => !used.has(x.i) && t.words.some(w => x.text.includes(w)));
+    if (hit) { map[t.key] = hit.i; used.add(hit.i); }
+  }
+  const restNumbers = cols.filter(x => !used.has(x.i) && x.c.type === 'number');
+  for (const t of TILES) if (map[t.key] === undefined && restNumbers.length) map[t.key] = restNumbers.shift().i;
+  return map;
+}
+
+function showMessage(text, resultName) {
+  card.innerHTML = `<div class="msg">${text}</div>`;
+  if (resultName && window.parent !== window) window.parent.postMessage({ resultName, message: text }, '*');
+}
+
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (!msg || typeof msg !== 'object' || !('resultName' in msg)) return;
+  const columns = msg.columns || [], rows = msg.data || [];
+  const m = mapColumns(columns);
+
+  if (rows.length === 0 || TILES.some(t => m[t.key] === undefined)) {
+    showMessage('أضف المتغيرات: الجري، الضغط، البلانك', msg.resultName);
+    return;
+  }
+
+  // Selected row if the card is the target of a selection, otherwise the first row
+  const brush = columns.findIndex(c => c.usage === 'brush');
+  const row = (brush >= 0 && rows.find(r => r[brush] > 0)) || rows[0];
+
+  renderCard({ run: row[m.run], push: row[m.push], plank: row[m.plank] });
+});
+
+// Sample when the page is opened directly (outside VA)
+if (window.parent === window) renderCard({ run: 88, push: 92, plank: 85 });
+</script>
+</body>
+</html>
