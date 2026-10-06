@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dynamic DDC Table</title>
+<style>
+  :root {
+    --bg:        #121417;
+    --text:      #ffffff;
+    --muted:     #9aa0a6;
+    --header:    #8a9096;
+    --accent:    #3ddc97;
+    --row-line:  rgba(255,255,255,0.06);
+    --font: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+  .wrap { height: 100%; overflow: auto; padding: 8px 12px; box-sizing: border-box; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--header); text-align: left; padding: 6px 10px 10px; white-space: nowrap;
+    position: sticky; top: 0; background: var(--bg); cursor: pointer; user-select: none;
+  }
+  th.num { text-align: center; }
+  th .arrow { opacity: 0.6; margin-left: 4px; }
+  td { padding: 9px 10px; border-top: 1px solid var(--row-line); white-space: nowrap; font-size: 13px; }
+  td.num   { text-align: center; font-weight: 700; font-size: 14px; }
+  td.key   { color: var(--accent); font-size: 12px; }
+  td.title { font-weight: 700; }
+  td.muted { color: var(--muted); font-size: 12px; }
+  td.accent { color: var(--accent); }
+  tr:hover td { background: rgba(255,255,255,0.03); }
+  tr.selected td { background: rgba(61,220,151,0.10); }
+  .msg { color: var(--muted); font-size: 13px; padding: 16px; }
+  .note { color: var(--muted); font-size: 11px; padding: 8px 10px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="root"><div class="msg">Assign columns to the Variables role to show data.</div></div>
+
+<script>
+/* ------------------------------------------------------------------
+   Optional URL parameters (set per DDC object in the Options pane):
+     group=Provider    one header text spanning all category columns
+     sort=desc|asc|none  default sort (default: desc on first measure)
+     sortcol=N         0-based column index to sort by
+     accent=last|none|all   which measure columns are highlighted
+     decimals=N        max decimals for numbers (default 2)
+   Example: ddc_dynamic_table.html?group=Provider&accent=last
+------------------------------------------------------------------- */
+const opts = new URLSearchParams(window.location.search);
+const OPT = {
+  group:    opts.get("group"),
+  sort:     (opts.get("sort") || "desc").toLowerCase(),
+  sortcol:  opts.has("sortcol") ? parseInt(opts.get("sortcol"), 10) : null,
+  accent:   (opts.get("accent") || "last").toLowerCase(),
+  decimals: opts.has("decimals") ? parseInt(opts.get("decimals"), 10) : 2
+};
+
+let state = { cols: [], rows: [], sortIdx: null, sortDir: OPT.sort, msg: null };
+
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const isMeasure = c => c.type === "number";
+
+function formatNumber(v, col) {
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v !== "number") return esc(v);
+  const fmt = (col.format && col.format.name ? col.format.name : col.format || "").toString().toUpperCase();
+  if (fmt.startsWith("PERCENT")) {
+    return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: OPT.decimals }).format(v);
+  }
+  if (fmt.startsWith("DOLLAR")) {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: OPT.decimals }).format(v);
+  }
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: OPT.decimals }).format(v);
+}
+
+/* Decide the visual style of each category column by its position,
+   so the layout works no matter which columns are assigned. */
+function categoryClass(posInCats, totalCats) {
+  if (totalCats === 1) return "title";
+  if (posInCats === 0) return "key";      // e.g. an ID / code column
+  if (posInCats === 1) return "title";    // e.g. the main name column
+  return "muted";                         // any further descriptive columns
+}
+
+function measureAccent(posInMeasures, totalMeasures) {
+  if (OPT.accent === "all")  return true;
+  if (OPT.accent === "none") return false;
+  return posInMeasures === totalMeasures - 1;   // "last"
+}
+
+function render() {
+  const root = document.getElementById("root");
+  const { cols, rows } = state;
+
+  if (!cols.length) {
+    root.innerHTML = '<div class="msg">Assign columns to the Variables role to show data.</div>';
+    return;
+  }
+  if (!rows.length) {
+    root.innerHTML = '<div class="msg">No rows match the current filters.</div>';
+    return;
+  }
+
+  // Classify columns once
+  const catIdx = [], measIdx = [];
+  cols.forEach((c, i) => (isMeasure(c) ? measIdx : catIdx).push(i));
+  const cellClass = cols.map((c, i) => {
+    if (isMeasure(c)) {
+      const p = measIdx.indexOf(i);
+      return "num" + (measureAccent(p, measIdx.length) ? " accent" : "");
+    }
+    return categoryClass(catIdx.indexOf(i), catIdx.length);
+  });
+
+  // Sorting
+  let data = rows.slice();
+  if (state.sortIdx === null) {
+    state.sortIdx = OPT.sortcol !== null && OPT.sortcol < cols.length
+      ? OPT.sortcol
+      : (measIdx.length ? measIdx[0] : 0);
+  }
+  if (state.sortDir !== "none") {
+    const i = state.sortIdx, dir = state.sortDir === "asc" ? 1 : -1;
+    data.sort((a, b) => {
+      const x = a[i], y = b[i];
+      if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+      return String(x ?? "").localeCompare(String(y ?? "")) * dir;
+    });
+  }
+
+  // Header
+  let head = "<tr>";
+  cols.forEach((c, i) => {
+    let label = c.label || c.name;
+    if (OPT.group && !isMeasure(c)) {
+      label = catIdx.indexOf(i) === 0 ? OPT.group : "";
+    }
+    const arrow = state.sortIdx === i && state.sortDir !== "none"
+      ? `<span class="arrow">${state.sortDir === "asc" ? "▲" : "▼"}</span>` : "";
+    head += `<th class="${isMeasure(c) ? "num" : ""}" data-i="${i}">${esc(label)}${arrow}</th>`;
+  });
+  head += "</tr>";
+
+  // Body
+  const body = data.map(r => "<tr>" + r.map((v, i) =>
+    `<td class="${cellClass[i]}">${isMeasure(cols[i]) ? formatNumber(v, cols[i]) : esc(v)}</td>`
+  ).join("") + "</tr>").join("");
+
+  let note = "";
+  if (state.msg && state.msg.availableRowCount > state.msg.rowCount) {
+    note = `<div class="note">Showing ${state.msg.rowCount} of ${state.msg.availableRowCount} rows. Add filters to see the rest.</div>`;
+  }
+
+  root.innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>${note}`;
+
+  // Click a header to sort: desc -> asc -> desc
+  root.querySelectorAll("th").forEach(th => th.addEventListener("click", () => {
+    const i = parseInt(th.dataset.i, 10);
+    if (state.sortIdx === i) state.sortDir = state.sortDir === "desc" ? "asc" : "desc";
+    else { state.sortIdx = i; state.sortDir = "desc"; }
+    render();
+  }));
+}
+
+/* ---------- Receive data from SAS Visual Analytics ---------- */
+let gotData = false;
+window.addEventListener("message", event => {
+  const msg = event.data;
+  if (!msg || typeof msg !== "object" || !Array.isArray(msg.columns)) return;
+  gotData = true;
+  state.msg = msg;
+  state.cols = msg.columns;
+  state.rows = Array.isArray(msg.data) ? msg.data : [];
+  state.sortIdx = null;            // re-evaluate default sort for new columns
+  state.sortDir = OPT.sort;
+  render();
+});
+
+/* ---------- Demo data when opened directly in a browser ---------- */
+if (window.self === window.top) {
+  setTimeout(() => {
+    if (gotData) return;
+    state.cols = [
+      { name: "id",     label: "Provider",      type: "string" },
+      { name: "name",   label: "Name",          type: "string" },
+      { name: "sector", label: "Sector",        type: "string" },
+      { name: "ds",     label: "Datasets",      type: "number" },
+      { name: "uc",     label: "Linked use cases", type: "number" }
+    ];
+    state.rows = [
+      ["PRV-007", "Metro Transport Authority", "Transport", 7, 12],
+      ["PRV-014", "National Telecom Co.", "Telecommunications", 5, 8],
+      ["PRV-021", "Port Operations Group", "Maritime", 4, 6],
+      ["PRV-003", "Civil Aviation Registry", "Aviation", 3, 5]
+    ];
+    render();
+  }, 300);
+}
+</script>
+</body>
+</html>
