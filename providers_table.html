@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Area 56 · Data providers table — SAS VA Data-Driven Content</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  /* ════════════════════════════════════════════════════════════════
+   *  SAS VA DDC MESSAGING SHIM
+   *  Self-contained equivalent of util/messagingUtil.js so this file
+   *  drops into VA as a single .html with no sibling JS dependencies.
+   * ════════════════════════════════════════════════════════════════ */
+  (function () {
+    if (window.va && window.va.messagingUtil) return;
+    window.va = window.va || {};
+    var _cb = null;
+    window.va.messagingUtil = {
+      setOnDataReceivedCallback: function (fn) {
+        _cb = fn;
+        window.addEventListener('message', function (ev) {
+          if (ev && ev.data && typeof ev.data === 'object' && _cb) _cb(ev.data);
+        });
+      },
+      postMessage: function (msg) { if (window.parent) window.parent.postMessage(msg, '*'); },
+      postSelectionMessage: function (resultName, rows) {
+        rows = (rows || []).map(function (r) { return (typeof r === 'object') ? r : { row: r }; });
+        this.postMessage({ resultName: resultName, selections: rows });
+      },
+      postInstructionalMessage: function (resultName, txt) {
+        this.postMessage({ resultName: resultName, message: txt });
+      }
+    };
+  })();
+</script>
+<style>
+  :root {
+    --card:#151918; --deep:#0f1413;
+    --line:#1c463b; --line-2:#173a30; --hair:rgba(238,248,242,.07); --hair-2:rgba(238,248,242,.045);
+    --mint:#2fe3a0; --mint-2:#01c18d; --mint-dim:#0e604a; --mint-bg:#0f2a22; --mint-bg-2:#0f3a2e;
+    --purple:#8769a6; --grey:#515d59; --gold:#c5a54a; --gold-dim:#5f542c;
+    --teal:#2ab5ad; --red:#c45454; --orange:#ff8f3c; --silver:#b3bcb9;
+    --t1:#eef5f1; --t2:#cfdad4; --t3:#8fa199; --t4:#65756e; --t5:#4a5852;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  /* Transparent so the card frame drawn in the page wireframe shows through.
+     If VA renders the object on white, set the object's style background to
+     transparent (Options → Style) or change this to background:#151918. */
+  html, body { width:100%; height:100%; background:transparent; color:var(--t2);
+    font-family:'Manrope',-apple-system,system-ui,sans-serif; font-feature-settings:'tnum' 1,'lnum' 1; overflow:hidden;
+    -webkit-font-smoothing:antialiased; }
+  html { font-size:clamp(10px, 1.25vh + .3vw, 15px); }
+  a { color:inherit; text-decoration:none; } button, input, select { font:inherit; color:inherit; background:none; border:0; } button { cursor:pointer; }
+  .stage { height:100%; display:flex; flex-direction:column; min-height:0; }
+  .lab { font-size:.7rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--t4); }
+  .title { font-size:1.2rem; font-weight:700; color:var(--t1); }
+  .sub { font-size:.86rem; color:var(--t3); margin-top:.15rem; }
+  .note { font-size:.8rem; color:var(--t3); }
+  .link { font-size:.86rem; font-weight:700; color:var(--mint); white-space:nowrap; }
+  .head { display:flex; justify-content:space-between; align-items:flex-start; flex-shrink:0; }
+  .mint { color:var(--mint); } .purple { color:var(--purple); } .dim { color:var(--t3); }
+  .pill { display:inline-flex; align-items:center; gap:.45rem; height:1.7rem; padding:0 .8rem; border-radius:99rem; border:1px solid var(--hair); font-size:.86rem; color:var(--t2); white-space:nowrap; }
+  .pill.mint { background:var(--mint-bg); border-color:#1c6a50; color:var(--mint); }
+  .pill.purple { background:rgba(135,105,166,.14); border-color:#5b4a73; color:#b9a3d6; }
+  .pill.out { color:var(--t3); border-color:#3a4744; }
+  .pill.gold { border-color:var(--gold-dim); color:var(--gold); background:rgba(197,165,74,.04); }
+  .pill.lab { font-size:.56rem; font-weight:700; letter-spacing:.14em; color:var(--t3); border-color:#3a4744; }
+  .pill .dot { width:.5rem; height:.5rem; border-radius:50%; background:currentColor; flex:none; }
+  .legend { display:flex; gap:1.2rem; font-size:.8rem; color:var(--t3); }
+  .legend span { display:flex; align-items:center; gap:.45rem; }
+  .legend i { width:.62rem; height:.62rem; border-radius:50%; background:var(--mint-2); }
+  .legend i.f { background:var(--purple); } .legend i.o { background:none; border:1px solid #6a7773; }
+  .sample { position:absolute; right:.6rem; top:.4rem; font-size:.6rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); border:1px solid var(--gold-dim); border-radius:99rem; padding:.2rem .6rem; opacity:.85; z-index:9; }
+  .sample.hidden { display:none; }
+  .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; color:var(--t4); text-align:center; padding:0 10%; }
+
+  .stage { padding:1rem 1.3rem .8rem; }
+  table { width:100%; border-collapse:collapse; margin-top:.5rem; flex:1; }
+  th { text-align:left; font-size:.6rem; font-weight:700; letter-spacing:.12em; color:var(--t4); padding:0 0 .4rem; text-transform:uppercase; white-space:nowrap; }
+  th.c, td.c { text-align:center; } td { padding:.3rem 0; vertical-align:middle; }
+  tr.r { cursor:pointer; } tr.r:hover td { color:var(--mint); } tr.r.on td.nm { color:var(--mint); }
+  td.id { font-size:.8rem; font-weight:600; color:var(--t3); width:4.6rem; }
+  td.nm { font-size:1rem; font-weight:700; color:var(--t1); white-space:nowrap; padding-right:.9rem; }
+  td.dm { font-size:.8rem; color:var(--t4); white-space:nowrap; padding-right:.8rem; }
+  td.ds { font-size:1rem; font-weight:700; color:var(--t1); width:4.5rem; }
+  td.lk { font-size:1rem; font-weight:600; color:var(--mint); width:7rem; }
+
+</style>
+</head>
+<body>
+<span class="sample" id="sample">Sample · awaiting SAS VA</span>
+<div class="stage">
+<div class="head"><div class="title">Data Providers</div><a class="link" id="more" href="#" onclick="return false">Browse all providers →</a></div><table><thead><tr><th>Provider</th><th></th><th></th><th class="c">Datasets</th><th class="c">Linked use cases</th></tr></thead><tbody id="rows"></tbody></table>
+</div>
+<script>
+
+  'use strict';
+  let RESULT_NAME = null, IS_SAMPLE = true;
+  const LIFE = { active:'Currently Activated', future:'Expected in the Future', out:'Out of Scope' };
+  const LIFE_CLS = { active:'', future:'f', out:'o' };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const byId = id => document.getElementById(id);
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>';
+  const BOLT = '<svg viewBox="0 0 24 24" fill="#e9c75a"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>';
+  const SPARK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5c.9 5.6 4.9 9.6 10.5 10.5C16.9 12.9 12.9 16.9 12 22.5 11.1 16.9 7.1 12.9 1.5 12 7.1 11.1 11.1 7.1 12 1.5z"/></svg>';
+  // Lifecycle values may arrive as codes or labels, in any case
+  function normLife(v) { v = String(v || '').toLowerCase();
+    if (v.startsWith('act') || v.includes('current')) return 'active';
+    if (v.startsWith('fut') || v.includes('expect')) return 'future';
+    if (v.startsWith('out')) return 'out'; return 'active'; }
+  /* Case-insensitive name/label → column-index map; missing required roles are
+     reported back to the VA report author via an instructional message. */
+  function mapColumns(msg, required, label) {
+    const idx = {};
+    msg.columns.forEach((c, i) => { if (c && c.name) idx[String(c.name).toLowerCase()] = i; if (c && c.label) idx[String(c.label).toLowerCase()] = i; });
+    const missing = required.filter(k => !(k in idx));
+    if (missing.length) { va.messagingUtil.postInstructionalMessage(RESULT_NAME, label + ': please assign the following columns in the Roles tab — ' + missing.join(', ')); return null; }
+    return idx;
+  }
+  function rowsToObjects(msg, idx, cols) { return msg.data.map((row, ri) => { const r = { _row: ri }; cols.forEach(k => { r[k] = k in idx ? row[idx[k]] : undefined; }); return r; }); }
+  function num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function gotData() { IS_SAMPLE = false; const b = byId('sample'); if (b) b.classList.add('hidden'); }
+  function select(rows) { if (RESULT_NAME) va.messagingUtil.postSelectionMessage(RESULT_NAME, rows); }
+
+  /* ════════════════════════════════════════════════════════════════
+   *  ROLES (Data tab): PRV_ID, NAME, DOMAIN, DATASETS, USE_CASES
+   * ════════════════════════════════════════════════════════════════ */
+  const REQUIRED = ["PRV_ID", "NAME", "DOMAIN", "DATASETS", "USE_CASES"];
+
+  /* One row per provider. Shows the top MAX_ROWS by linked use cases; click selects the provider's row. */
+  const MAX_ROWS = 4; let ITEMS = [], ON = -1;
+  const COLS = ['prv_id','name','domain','datasets','use_cases'];
+  function render() { byId('more').textContent = `Browse all ${ITEMS.length} providers →`;
+    byId('rows').innerHTML = ITEMS.slice().sort((a, b) => num(b.use_cases) - num(a.use_cases)).slice(0, MAX_ROWS).map(p => `<tr class="r${ON === p._row ? ' on' : ''}" data-row="${p._row}"><td class="id">${esc(p.prv_id)}</td><td class="nm">${esc(p.name)}</td><td class="dm">${esc(p.domain)}</td><td class="ds c">${num(p.datasets)}</td><td class="lk c">${num(p.use_cases)}</td></tr>`).join(''); }
+  function onVADataReceived(msg) {
+    if (!msg || !Array.isArray(msg.data) || !Array.isArray(msg.columns)) return;
+    RESULT_NAME = msg.resultName;
+    const idx = mapColumns(msg, COLS, 'Data providers'); if (!idx) return;
+    ITEMS = rowsToObjects(msg, idx, COLS); gotData(); ON = -1; render();
+  }
+  byId('rows').addEventListener('click', e => { const r = e.target.closest('tr.r'); if (!r) return; ON = ON === +r.dataset.row ? -1 : +r.dataset.row; select(ON >= 0 ? [ON] : []); render(); });
+  /* ─── Sample data: shown when opened outside SAS VA, replaced by the first VA message ─── */
+  function loadSampleData() {
+    ITEMS = [{"_row": 0, "prv_id": "PRV-007", "name": "Metro Transport Authority", "domain": "Transport", "datasets": 7, "use_cases": 12}, {"_row": 1, "prv_id": "PRV-016", "name": "Municipal GIS Office", "domain": "Geospatial", "datasets": 6, "use_cases": 10}, {"_row": 2, "prv_id": "PRV-002", "name": "Citizen Services Portal", "domain": "Government services", "datasets": 6, "use_cases": 9}, {"_row": 3, "prv_id": "PRV-014", "name": "National Telecom Co.", "domain": "Telecommunications", "datasets": 5, "use_cases": 8}, {"_row": 4, "prv_id": "PRV-009", "name": "Central Bank Registry", "domain": "Financial", "datasets": 4, "use_cases": 7}, {"_row": 5, "prv_id": "PRV-021", "name": "Port Operations Group", "domain": "Maritime", "datasets": 4, "use_cases": 6}, {"_row": 6, "prv_id": "PRV-003", "name": "Civil Aviation Registry", "domain": "Aviation", "datasets": 3, "use_cases": 5}, {"_row": 7, "prv_id": "PRV-023", "name": "Hotel Registration System", "domain": "Hospitality", "datasets": 2, "use_cases": 4}, {"_row": 8, "prv_id": "PRV-018", "name": "Energy & Water Utility", "domain": "Utilities", "datasets": 2, "use_cases": 3}, {"_row": 9, "prv_id": "PRV-011", "name": "Health Records Authority", "domain": "Health", "datasets": 3, "use_cases": 2}]; render();
+  }
+  va.messagingUtil.setOnDataReceivedCallback(onVADataReceived);
+  loadSampleData();
+</script>
+</body>
+</html>
