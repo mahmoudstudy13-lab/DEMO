@@ -1,195 +1,231 @@
 <!doctype html>
-<html lang="ar">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Share Bars DDC</title>
+<title>Track Bars DDC</title>
 <style>
   :root{
-    --track:#ececec;
-    --bar-top:#12cf92;
-    --bar-bottom:#16a06d;
-    --value:#1f1f1f;
-    --label:#9a9a9a;
-    --radius:14px;
-    --gap:4%;
+    --track:#eeeeee;      /* grey full-length track */
+    --bar:#f0a35e;        /* bar color */
+    --value:#1f1f1f;      /* value label */
+    --label:#4a4a4a;      /* category label */
+    --ref:#3a3a3a;        /* reference line */
+    --radius:2px;
+    --label-width:34%;
+    --row-min:26px;       /* minimum row height before scrolling starts */
   }
   html,body{
-    margin:0;height:100%;overflow:hidden;
-    background:transparent !important;
+    margin:0;height:100%;overflow:hidden;background:transparent !important;
     font-family:"Tajawal","Segoe UI","Noto Sans Arabic",Tahoma,Arial,sans-serif;
   }
-  #chart{display:flex;height:100%;box-sizing:border-box;padding:8px 6px;gap:var(--gap);}
-  #chart.rtl{flex-direction:row-reverse;}
-  .col{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;}
-  .val{font-weight:700;font-size:clamp(11px,2.4vw,16px);color:var(--value);margin-bottom:8px;direction:ltr;}
-  .track{flex:1;width:100%;max-width:120px;background:var(--track);border-radius:var(--radius);position:relative;overflow:hidden;}
-  .bar{position:absolute;left:0;right:0;bottom:0;height:0;border-radius:var(--radius);
-       background:linear-gradient(180deg,var(--bar-top),var(--bar-bottom));transition:height .6s ease,background .3s;}
-  .lbl{margin-top:8px;font-size:clamp(10px,2.2vw,15px);color:var(--label);text-align:center;
-       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-  .msg{margin:auto;color:var(--label);font-size:13px;text-align:center;}
-
-  /* ---- Color picker (viewer option) ---- */
-  #pickerBtn{position:fixed;top:4px;left:4px;width:22px;height:22px;border-radius:50%;
-    border:1px solid rgba(0,0,0,.15);cursor:pointer;padding:0;opacity:0;transition:opacity .2s;
-    background:conic-gradient(#12cf92,#3b82f6,#8b5cf6,#ef4444,#f59e0b,#12cf92);}
-  body:hover #pickerBtn,#pickerBtn.open{opacity:.9;}
-  #picker{position:fixed;top:30px;left:4px;display:none;gap:6px;flex-wrap:wrap;max-width:170px;
-    background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:10;}
-  #picker.show{display:flex;}
-  .sw{width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent;}
-  .sw.active{border-color:#333;}
-  #customColor{width:22px;height:22px;padding:0;border:none;background:none;cursor:pointer;}
+  #chart{height:100%;box-sizing:border-box;padding:6px 8px;display:flex;flex-direction:column;gap:6px;
+         overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#c8c8c8 transparent;}
+  #chart.noscroll{overflow-y:hidden;gap:2px;}
+  /* auto margins centre the rows when they fit, and collapse to 0 when they overflow (so the top row stays reachable) */
+  #chart > .row:first-of-type{margin-top:auto;}
+  #chart > .row:last-of-type{margin-bottom:auto;}
+  .row{flex:1 0 var(--row-min);max-height:34px;min-height:var(--row-min);display:flex;align-items:center;gap:10px;}
+  #chart.noscroll .row{flex:1 1 0;min-height:6px;}
+  #chart.noscroll .track{margin:1px 0;}
+  #chart::-webkit-scrollbar{width:6px;}
+  #chart::-webkit-scrollbar-thumb{background:#c8c8c8;border-radius:3px;}
+  #chart::-webkit-scrollbar-track{background:transparent;}
+  .lbl{flex:0 0 var(--label-width);font-size:clamp(10px,2vw,14px);font-weight:600;color:var(--label);
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .track{flex:1;align-self:stretch;margin:3px 0;background:var(--track);border-radius:var(--radius);position:relative;}
+  .bar{position:absolute;top:22%;bottom:22%;inset-inline-start:0;width:0;background:var(--bar);
+       border-radius:var(--radius);transition:width .6s ease;}
+  .val{position:absolute;top:50%;transform:translateY(-50%);font-weight:700;font-size:clamp(10px,1.9vw,13px);
+       color:var(--value);white-space:nowrap;direction:ltr;padding-inline:6px;}
+  .ref{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--ref);}
+  .msg{margin:auto;color:#9a9a9a;font-size:13px;text-align:center;}
 </style>
 </head>
 <body>
 <div id="chart"></div>
-<button id="pickerBtn" title="Change color" aria-label="Change color"></button>
-<div id="picker"></div>
 
 <script>
-/* ===== Settings (can be overridden from the URL, see below) ===== */
-const CONFIG = {
-  mode: "share",   // "share" = % of total | "value" = raw measure
-  decimals: 1,
-  sort: "desc",    // "desc" | "asc" | "none"
-  rtl: false,
-  maxBars: 12,
-  picker: true     // show the color button to report viewers
-};
+/* ===================== URL OPTIONS (developer only) =====================
+   RANKING
+     ?rank=top&n=5        show the 5 highest values
+     ?rank=bottom&n=10    show the 10 lowest values
+     (no rank)            show all rows
 
-/* Preset themes: [top, bottom] gradient colors */
-const THEMES = {
-  green:  ["#12cf92","#16a06d"],
-  blue:   ["#4f9cf9","#1d5fd1"],
-  purple: ["#a78bfa","#6d28d9"],
-  red:    ["#f87171","#c81e1e"],
-  orange: ["#fbbf24","#d97706"],
-  teal:   ["#2dd4bf","#0f766e"],
-  gold:   ["#d6b56d","#9c7a2e"],
-  grey:   ["#9ca3af","#4b5563"]
-};
+   SORTING (applied after ranking)
+     ?sort=desc           highest first
+     ?sort=asc            lowest first
+     ?sort=label          by category name A→Z   (?sort=label_desc for Z→A)
+     ?sort=none           keep the order sent by VA
+     default: desc when rank=top, asc when rank=bottom, otherwise none
 
-/* ===== URL parameters (designer option) =====
-   Example URL in VA:  .../sas_va_ddc_share_bars.html?theme=blue
-   or custom:          ...?color=ff6600            (single color, gradient auto-darkened)
-                       ...?top=ff9900&bottom=cc5500&track=f2f2f2&value=222222&label=888888
-   other:              ...?mode=value&decimals=0&sort=none&rtl=1&picker=0
-*/
-const P = new URLSearchParams(location.search);
+   AXIS / REFERENCE LINE
+     ?min=0&max=100       axis range (default 0 → 100, or auto if values exceed 100)
+     ?ref=87              fixed reference line;  ?ref=avg  = average of shown values
+                          (or assign a 2nd measure in VA as a per-row target)
+
+   COLORS (hex, with or without #)
+     ?color=f0a35e  ?track=eeeeee  ?value=1f1f1f  ?label=4a4a4a  ?refcolor=3a3a3a
+
+   SCROLLING
+     (default)            a thin vertical scroll bar appears only when rows don't fit
+     ?rowheight=30        minimum row height in px before scrolling starts (default 26)
+     ?scroll=0            no scroll bar: squeeze all rows to fit the object height
+
+   OTHER
+     ?rtl=0               left-to-right layout (default right-to-left)
+     ?decimals=1          decimals in value labels
+
+   Example:
+     sas_va_ddc_hbar_track.html?rank=top&n=5&sort=desc&color=1d5fd1&ref=avg
+========================================================================== */
+/* Options are read (in this priority) from:
+   1) VA report parameters named rank / n / sort (if your VA release sends parameters to DDC)
+   2) the URL hash   e.g.  page.html#rank=top&n=5
+   3) the URL query  e.g.  page.html?rank=top&n=5
+   Keys are case-insensitive. Add ?debug=1 to show what the page received. */
+const lowerKeys = sp => { const m = new Map(); sp.forEach((v,k)=>m.set(k.trim().toLowerCase(), v.trim())); return m; };
+const URLOPTS = lowerKeys(new URLSearchParams(location.search));
+lowerKeys(new URLSearchParams(location.hash.replace(/^#/, ""))).forEach((v,k)=>URLOPTS.set(k,v));
+let VAOPTS = new Map();
+const get = k => VAOPTS.has(k) ? VAOPTS.get(k) : (URLOPTS.has(k) ? URLOPTS.get(k) : null);
+const P = { get };
 const hex = v => v ? (v.startsWith("#") ? v : "#" + v) : null;
-if (P.get("mode")) CONFIG.mode = P.get("mode");
-if (P.get("decimals")) CONFIG.decimals = +P.get("decimals");
-if (P.get("sort")) CONFIG.sort = P.get("sort");
-if (P.get("rtl")) CONFIG.rtl = P.get("rtl") === "1";
-if (P.get("picker")) CONFIG.picker = P.get("picker") !== "0";
+const num = (k, d) => { const v = get(k); return (v != null && v !== "" && !isNaN(+v)) ? +v : d; };
+
+const CONFIG = {};
+function readConfig(){
+  const rank = String(get("rank") || "").toLowerCase();
+  CONFIG.rtl = get("rtl") !== "0";
+  CONFIG.min = num("min", 0);
+  CONFIG.max = num("max", null);
+  CONFIG.ref = get("ref");
+  CONFIG.decimals = num("decimals", 1);
+  CONFIG.rank = (rank === "top" || rank === "bottom") ? rank : null;
+  CONFIG.n = Math.max(1, Math.floor(num("n", 5)));
+  CONFIG.sort = String(get("sort") || (rank === "top" ? "desc" : rank === "bottom" ? "asc" : "none")).toLowerCase();
+  CONFIG.debug = get("debug") === "1";
+}
+readConfig();
+
+/* Pick up VA report parameters if they are included in the DDC message */
+function readVaParameters(msg){
+  if (!msg || !Array.isArray(msg.parameters)) return;
+  const m = new Map();
+  msg.parameters.forEach(p => {
+    const key = String(p.label || p.name || "").trim().toLowerCase();
+    let v = p.value;
+    if (Array.isArray(v)) v = v[0];
+    if (v && typeof v === "object") v = v.value ?? v.formattedValue;
+    if (["rank","n","sort"].includes(key) && v != null && v !== "") m.set(key, String(v).trim());
+  });
+  VAOPTS = m;
+  readConfig();
+}
 
 const root = document.documentElement.style;
+[["color","--bar"],["track","--track"],["value","--value"],["label","--label"],["refcolor","--ref"]]
+  .forEach(([k,v]) => { if (P.get(k)) root.setProperty(v, hex(P.get(k))); });
 
-function darken(h, f=0.25){
-  const n = parseInt(h.slice(1),16);
-  const c = s => Math.max(0, Math.round(((n>>s)&255)*(1-f))).toString(16).padStart(2,"0");
-  return "#" + c(16) + c(8) + c(0);
-}
-function applyColors(top, bottom){
-  root.setProperty("--bar-top", top);
-  root.setProperty("--bar-bottom", bottom || darken(top));
-}
-
-// Designer defaults from URL
-if (P.get("theme") && THEMES[P.get("theme")]) applyColors(...THEMES[P.get("theme")]);
-if (P.get("color")) applyColors(hex(P.get("color")));
-if (P.get("top")) applyColors(hex(P.get("top")), hex(P.get("bottom")));
-["track","value","label"].forEach(k => { if (P.get(k)) root.setProperty("--"+k, hex(P.get(k))); });
-
-// Viewer's own choice (remembered in their browser only)
-const STORE_KEY = "ddcShareBarsColor";
-try {
-  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-  if (saved && CONFIG.picker) applyColors(saved[0], saved[1]);
-} catch(e){}
-
-/* ===== Color picker UI ===== */
-const btn = document.getElementById("pickerBtn");
-const pk = document.getElementById("picker");
-function choose(top, bottom, el){
-  applyColors(top, bottom);
-  try { localStorage.setItem(STORE_KEY, JSON.stringify([top, bottom || darken(top)])); } catch(e){}
-  pk.querySelectorAll(".sw").forEach(s => s.classList.remove("active"));
-  if (el) el.classList.add("active");
-}
-if (CONFIG.picker){
-  Object.entries(THEMES).forEach(([name,[t,b]])=>{
-    const s = document.createElement("div");
-    s.className = "sw"; s.title = name;
-    s.style.background = `linear-gradient(180deg,${t},${b})`;
-    s.onclick = () => choose(t, b, s);
-    pk.appendChild(s);
-  });
-  const custom = document.createElement("input");
-  custom.type = "color"; custom.id = "customColor"; custom.title = "Custom color";
-  custom.oninput = e => choose(e.target.value);
-  pk.appendChild(custom);
-  btn.onclick = e => { e.stopPropagation(); pk.classList.toggle("show"); btn.classList.toggle("open"); };
-  document.addEventListener("click", e => { if (!pk.contains(e.target)) { pk.classList.remove("show"); btn.classList.remove("open"); } });
-} else {
-  btn.remove(); pk.remove();
-}
-
-/* ===== Chart ===== */
 const chart = document.getElementById("chart");
-if (CONFIG.rtl) chart.classList.add("rtl");
+chart.dir = CONFIG.rtl ? "rtl" : "ltr";
+if (get("scroll") === "0") chart.classList.add("noscroll");
+if (num("rowheight", null)) root.setProperty("--row-min", Math.max(12, num("rowheight", 26)) + "px");
 
-function showMsg(t){ chart.innerHTML = ""; const d=document.createElement("div"); d.className="msg"; d.textContent=t; chart.appendChild(d); }
+function showMsg(t){ chart.innerHTML=""; const d=document.createElement("div"); d.className="msg"; d.textContent=t; chart.appendChild(d); }
+const fmt = v => Number(v).toLocaleString("en-US",{minimumFractionDigits:CONFIG.decimals,maximumFractionDigits:CONFIG.decimals});
+
+function applyRankAndSort(rows){
+  // 1) ranking: pick highest / lowest N
+  if (CONFIG.rank === "top")    rows = rows.slice().sort((a,b)=>b.val-a.val).slice(0, CONFIG.n);
+  if (CONFIG.rank === "bottom") rows = rows.slice().sort((a,b)=>a.val-b.val).slice(0, CONFIG.n);
+  // 2) display order
+  const byLabel = (a,b)=>a.cat.localeCompare(b.cat, "ar");
+  switch (CONFIG.sort){
+    case "desc":       rows.sort((a,b)=>b.val-a.val); break;
+    case "asc":        rows.sort((a,b)=>a.val-b.val); break;
+    case "label":      rows.sort(byLabel); break;
+    case "label_desc": rows.sort((a,b)=>byLabel(b,a)); break;
+  }
+  return rows;
+}
 
 function render(rows){
   rows = rows.filter(r => r.val != null && !isNaN(r.val));
   if (!rows.length){ showMsg("No data"); return; }
-  if (CONFIG.sort === "desc") rows.sort((a,b)=>b.val-a.val);
-  if (CONFIG.sort === "asc")  rows.sort((a,b)=>a.val-b.val);
-  rows = rows.slice(0, CONFIG.maxBars);
+  const received = rows.length;
+  rows = applyRankAndSort(rows);
 
-  const total = rows.reduce((s,r)=>s+r.val,0);
-  const shown = rows.map(r => CONFIG.mode === "share" ? (total ? r.val/total*100 : 0) : r.val);
-  const max = Math.max(...shown.map(Math.abs)) || 1;
+  const vals = rows.map(r=>r.val);
+  let globalRef = null;
+  if (CONFIG.ref === "avg") globalRef = vals.reduce((a,b)=>a+b,0)/vals.length;
+  else if (CONFIG.ref != null && !isNaN(+CONFIG.ref)) globalRef = +CONFIG.ref;
+
+  const tops = vals.concat(rows.map(r=>r.ref).filter(v=>v!=null&&!isNaN(v)), globalRef!=null?[globalRef]:[]);
+  const hi = Math.max(...tops);
+  const max = CONFIG.max != null ? CONFIG.max : (hi <= 100 ? 100 : hi * 1.1);
+  const min = CONFIG.min;
+  const pct = v => Math.max(0, Math.min(100, (v - min) / ((max - min) || 1) * 100));
 
   chart.innerHTML = "";
-  rows.forEach((r,i)=>{
-    const col = document.createElement("div"); col.className = "col";
-    const val = document.createElement("div"); val.className = "val";
-    val.textContent = CONFIG.mode === "share"
-      ? shown[i].toFixed(CONFIG.decimals) + "%"
-      : shown[i].toLocaleString(undefined,{maximumFractionDigits:CONFIG.decimals});
-    const track = document.createElement("div"); track.className = "track";
-    const bar = document.createElement("div"); bar.className = "bar";
-    track.appendChild(bar);
-    const lbl = document.createElement("div"); lbl.className = "lbl";
-    lbl.textContent = r.cat; lbl.title = r.cat;
-    col.append(val, track, lbl);
-    chart.appendChild(col);
-    requestAnimationFrame(()=>{ bar.style.height = (Math.abs(shown[i])/max*100) + "%"; });
+  chart.scrollTop = 0;
+  rows.forEach(r=>{
+    const row=document.createElement("div"); row.className="row";
+    const lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=r.cat; lbl.title=r.cat;
+    const track=document.createElement("div"); track.className="track";
+    const bar=document.createElement("div"); bar.className="bar";
+    const val=document.createElement("div"); val.className="val"; val.textContent=fmt(r.val);
+    const p = pct(r.val);
+    if (p > 88){ val.style.insetInlineEnd = (100 - p) + "%"; val.style.color = "#fff"; }
+    else { val.style.insetInlineStart = p + "%"; }
+    track.append(bar, val);
+
+    const refVal = (r.ref != null && !isNaN(r.ref)) ? r.ref : globalRef;
+    if (refVal != null){
+      const ref=document.createElement("div"); ref.className="ref";
+      ref.style.insetInlineStart = pct(refVal) + "%";
+      ref.title = "Reference: " + fmt(refVal);
+      track.appendChild(ref);
+    }
+    row.append(lbl, track);
+    chart.appendChild(row);
+    requestAnimationFrame(()=>{ bar.style.width = p + "%"; });
   });
+
+  if (CONFIG.debug){
+    const d=document.createElement("div");
+    d.style.cssText="position:fixed;bottom:2px;left:4px;font:11px/1.3 monospace;color:#c00;background:#fff;direction:ltr;padding:2px 4px;border:1px solid #c00;z-index:9";
+    d.textContent=`v2 | rank=${CONFIG.rank} n=${CONFIG.n} sort=${CONFIG.sort} | rows received=${received} shown=${rows.length} | url=${location.search}${location.hash} | va params=${[...VAOPTS].map(x=>x.join("=")).join(",")||"none"}`;
+    chart.appendChild(d);
+  }
 }
 
-/* ===== Receive data from SAS Visual Analytics ===== */
+/* ===== Data from SAS Visual Analytics =====
+   Roles: 1 category (required), 1st measure = value (required), 2nd measure = target (optional) */
 window.addEventListener("message", function(e){
   const r = e.data;
   if (!r || !Array.isArray(r.columns) || !Array.isArray(r.data)) return;
+  readVaParameters(r);
   const ci = r.columns.findIndex(c => c.type === "string");
-  const mi = r.columns.findIndex(c => c.type === "number");
-  if (ci < 0 || mi < 0){ showMsg("Assign 1 category and 1 measure"); return; }
-  render(r.data.map(row => ({ cat: String(row[ci] ?? ""), val: Number(row[mi]) })));
+  const nums = r.columns.map((c,i)=>c.type==="number"?i:-1).filter(i=>i>=0);
+  if (ci < 0 || !nums.length){ showMsg("Assign 1 category and 1 measure"); return; }
+  render(r.data.map(row => ({
+    cat: String(row[ci] ?? ""),
+    val: Number(row[nums[0]]),
+    ref: nums[1] != null ? Number(row[nums[1]]) : null
+  })));
 }, false);
 
-/* ===== Demo data outside VA ===== */
+/* ===== Demo outside VA ===== */
 if (window.parent === window){
+  if (!URLOPTS.has("ref")) { URLOPTS.set("ref","87"); readConfig(); }
   render([
-    {cat:"عدد المركبات", val:40.2},
-    {cat:"السوابق الجنائية", val:28.1},
-    {cat:"الجنسية", val:15.3},
-    {cat:"الوظيفة", val:10.1},
-    {cat:"صنف المركبة", val:6.3}
+    {cat:"دائرة الموارد البشرية الحكومية", val:52.2},
+    {cat:"دائرة الاقتصاد والسياحة", val:56.8},
+    {cat:"المجلس الأعلى للطاقة", val:56.8},
+    {cat:"الإقامة وشؤون الأجانب", val:57.1},
+    {cat:"دائرة التعليم", val:61.4},
+    {cat:"دائرة الصحة", val:48.9}
   ]);
 } else {
   showMsg("Assign 1 category and 1 measure");
