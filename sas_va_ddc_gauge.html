@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gauge DDC</title>
+<style>
+  :root{
+    --bg:#f7f7f4;          /* frame background (same as design) */
+    --page:transparent;    /* area outside the frame */
+    --border:#ebebe6;
+    --radius:18px;
+    --title:#1f2937;
+    --sub:#6b7280;
+    --needle:#111827;
+    --c1:#d9775f;          /* gradient start (low)  */
+    --c2:#e9c46a;          /* gradient middle       */
+    --c3:#9fd3b0;          /* gradient light green  */
+    --c4:#3f9a68;          /* gradient end (high)   */
+  }
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--page);
+    font-family:"Tajawal","Segoe UI","Noto Sans Arabic",Tahoma,Arial,sans-serif;}
+  .frame{position:absolute;inset:4px;background:var(--bg);border:1px solid var(--border);
+    border-radius:var(--radius);box-sizing:border-box;display:flex;flex-direction:column;padding:12px 16px 10px;overflow:hidden;}
+  .title{font-weight:800;font-size:clamp(13px,3.2vw,18px);color:var(--title);margin:0 0 4px;}
+  .gauge{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
+  svg{width:100%;height:100%;display:block;overflow:visible;}
+  .needle{transition:transform .9s cubic-bezier(.3,1.3,.5,1);transform-origin:200px 200px;}
+  .end-lbl{font-weight:800;font-size:15px;fill:#fff;text-anchor:middle;dominant-baseline:central;direction:ltr;}
+  /* the number layer sits ABOVE the needle; the halo keeps digits readable where the needle passes */
+  .center{position:absolute;left:0;right:0;pointer-events:none;text-align:center;z-index:2;}
+  /* solid plate in the frame color: the needle passes BEHIND it, so the value is never covered */
+  .plate{display:inline-block;background:var(--bg);border-radius:14px;padding:2px 14px 4px;}
+  .num{font-weight:800;line-height:1;direction:ltr;display:inline-block;
+    paint-order:stroke fill;
+    text-shadow:0 0 3px var(--bg),0 0 6px var(--bg),0 0 10px var(--bg),0 0 14px var(--bg);}
+  .of{color:var(--sub);direction:ltr;text-shadow:0 0 4px var(--bg),0 0 8px var(--bg);}
+  .status{color:var(--sub);text-shadow:0 0 4px var(--bg),0 0 8px var(--bg);}
+  .status::before{content:"•";margin-inline-end:4px;}
+  .num{margin-bottom:2px;}
+  .msg{margin:auto;color:var(--sub);font-size:13px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="title" id="title">متوسط درجة الاختبار</div>
+  <div class="gauge" id="gauge">
+    <svg id="svg" viewBox="0 0 400 230" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+          <stop offset="0"    stop-color="var(--c1)" style="stop-color:var(--c1)"/>
+          <stop offset="0.45" stop-color="var(--c2)" style="stop-color:var(--c2)"/>
+          <stop offset="0.68" stop-color="var(--c3)" style="stop-color:var(--c3)"/>
+          <stop offset="1"    stop-color="var(--c4)" style="stop-color:var(--c4)"/>
+        </linearGradient>
+      </defs>
+      <!-- arc: centre (200,200), radius 160, stroke 34 -->
+      <path id="arc" d="M40 200 A160 160 0 0 1 360 200" fill="none" stroke="url(#grad)" stroke-width="34" stroke-linecap="round"/>
+      <circle cx="40"  cy="208" r="17" id="dotMin"/>
+      <circle cx="360" cy="208" r="17" id="dotMax"/>
+      <text class="end-lbl" x="40"  y="208" id="lblMin">0</text>
+      <text class="end-lbl" x="360" y="208" id="lblMax">100</text>
+      <!-- needle (drawn pointing straight up, rotated by value) -->
+      <g class="needle" id="needle">
+        <line x1="200" y1="200" x2="200" y2="62" stroke="var(--needle)" style="stroke:var(--needle)" stroke-width="7" stroke-linecap="round"/>
+        <circle cx="200" cy="200" r="12" fill="var(--needle)" style="fill:var(--needle)"/>
+      </g>
+    </svg>
+    <div class="center" id="center">
+      <div class="plate">
+        <div class="num" id="num">–</div>
+        <div class="of" id="of">/ 100</div>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== URL OPTIONS (developer only) =====================
+   ?title=...            frame title (default: متوسط درجة الاختبار)
+   ?min=0&max=100        gauge range
+   ?decimals=1           decimals of the big number
+   ?bands=50,75          status thresholds:  < 50 low | 50–75 mid | >= 75 high
+   ?low=...&mid=...&high=...   status texts (default: تحتاج انتباهاً | متوسط | جيد)
+   ?bg=f7f7f4            frame color      ?page=ffffff  color outside the frame (default transparent)
+   ?radius=18            frame corner radius (px)      ?border=0  hide frame border
+   ?c1=d9775f&c2=e9c46a&c3=9fd3b0&c4=3f9a68   arc gradient colors
+   ?needle=111827        needle color
+   ?agg=avg              if VA sends several rows: avg | sum | first (default avg)
+   ?debug=1              show what the page received
+   Example: sas_va_ddc_gauge.html?bands=50,75&decimals=1
+========================================================================== */
+const Q = new Map(); new URLSearchParams(location.search).forEach((v,k)=>Q.set(k.toLowerCase(),v));
+new URLSearchParams(location.hash.replace(/^#/,"")).forEach((v,k)=>Q.set(k.toLowerCase(),v));
+const get = k => Q.has(k) ? Q.get(k) : null;
+const num = (k,d) => { const v=get(k); return (v!=null&&v!==""&&!isNaN(+v)) ? +v : d; };
+const hex = v => v ? (v.startsWith("#")?v:"#"+v) : null;
+const root = document.documentElement.style;
+
+const CFG = {
+  min: num("min",0), max: num("max",100), decimals: num("decimals",1),
+  bands: (get("bands")||"50,75").split(",").map(Number),
+  low: get("low") || "تحتاج انتباهاً", mid: get("mid") || "متوسط", high: get("high") || "جيد",
+  agg: (get("agg")||"avg").toLowerCase(), debug: get("debug")==="1"
+};
+if (get("title") != null) document.getElementById("title").textContent = get("title");
+if (get("title") === "") document.getElementById("title").style.display = "none";
+[["bg","--bg"],["page","--page"],["needle","--needle"],["c1","--c1"],["c2","--c2"],["c3","--c3"],["c4","--c4"]]
+  .forEach(([k,v])=>{ if(get(k)) root.setProperty(v, hex(get(k))); });
+if (get("radius")) root.setProperty("--radius", num("radius",18)+"px");
+if (get("border")==="0") root.setProperty("--border","transparent");
+
+const $ = id => document.getElementById(id);
+$("lblMin").textContent = fmtAxis(CFG.min); $("lblMax").textContent = fmtAxis(CFG.max);
+$("of").textContent = "/ " + fmtAxis(CFG.max);
+function fmtAxis(v){ return Number(v).toLocaleString("en-US",{maximumFractionDigits:2}); }
+
+/* colors for the end dots and number come from the gradient ends */
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function mix(a,b,t){ const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)); const A=p(a),B=p(b);
+  return "#"+A.map((x,i)=>Math.round(x+(B[i]-x)*t).toString(16).padStart(2,"0")).join(""); }
+function colorAt(t){ // t: 0..1 along the gradient
+  const stops=[[0,cssVar("--c1")],[.45,cssVar("--c2")],[.68,cssVar("--c3")],[1,cssVar("--c4")]];
+  for(let i=1;i<stops.length;i++) if(t<=stops[i][0]) return mix(stops[i-1][1],stops[i][1],(t-stops[i-1][0])/(stops[i][0]-stops[i-1][0]));
+  return stops[stops.length-1][1];
+}
+$("dotMin").setAttribute("fill", cssVar("--c1"));
+$("dotMax").setAttribute("fill", cssVar("--c4"));
+
+/* place the number block inside the arc, scaled to the SVG's rendered size */
+function layout(){
+  const svg=$("svg"), box=svg.getBoundingClientRect(), g=$("gauge").getBoundingClientRect();
+  const s=Math.min(box.width/400, box.height/230);           // px per viewBox unit
+  const ox=(box.width-400*s)/2, oy=(box.height-230*s)/2;    // letterbox offsets
+  const c=$("center");
+  c.style.top = (box.top-g.top + oy + 78*s) + "px";
+  $("num").style.fontSize = Math.max(22, 58*s) + "px";
+  $("of").style.fontSize = Math.max(10, 15*s) + "px";
+  $("status").style.fontSize = Math.max(10, 15*s) + "px";
+}
+new ResizeObserver(layout).observe($("gauge"));
+
+let current = null;
+function render(v){
+  if (v==null || isNaN(v)){ $("num").textContent="–"; $("status").textContent="لا توجد بيانات"; setNeedle(CFG.min); return; }
+  const t = Math.max(0, Math.min(1, (v-CFG.min)/((CFG.max-CFG.min)||1)));
+  setNeedle(v);
+  animateNumber(current==null?CFG.min:current, v);
+  current = v;
+  // number takes the arc color at its value, darkened for readability
+  $("num").style.color = t >= .5 ? mix(colorAt(t), "#1f6b45", .45) : mix(colorAt(t), "#7a3b1e", .25);
+  const [b1,b2] = CFG.bands;
+  $("status").textContent = v < b1 ? CFG.low : (v < b2 ? CFG.mid : CFG.high);
+}
+function setNeedle(v){
+  const t = Math.max(0, Math.min(1, (v-CFG.min)/((CFG.max-CFG.min)||1)));
+  $("needle").style.transform = `rotate(${-90 + t*180}deg)`;
+}
+function animateNumber(from,to){
+  const start=performance.now(), dur=900;
+  const fmt=x=>Number(x).toLocaleString("en-US",{minimumFractionDigits:CFG.decimals,maximumFractionDigits:CFG.decimals});
+  (function step(now){
+    const k=Math.min(1,(now-start)/dur), e=1-Math.pow(1-k,3);
+    $("num").textContent = fmt(from+(to-from)*e);
+    if(k<1) requestAnimationFrame(step);
+  })(start);
+}
+
+/* ===== Data from SAS VA =====
+   Role: 1 measure. VA re-sends data every time a page filter / prompt / selection changes,
+   so the gauge updates automatically (make sure the filter is linked to this object). */
+window.addEventListener("message", e=>{
+  const r=e.data;
+  if(!r || !Array.isArray(r.columns) || !Array.isArray(r.data)) return;
+  const mi = r.columns.findIndex(c=>c.type==="number");
+  if (mi<0){ $("status").textContent="Assign 1 measure"; return; }
+  const vals = r.data.map(row=>Number(row[mi])).filter(x=>!isNaN(x));
+  let v = null;
+  if (vals.length){
+    if (CFG.agg==="sum") v = vals.reduce((a,b)=>a+b,0);
+    else if (CFG.agg==="first") v = vals[0];
+    else v = vals.reduce((a,b)=>a+b,0)/vals.length;
+  }
+  render(v);
+  if (CFG.debug){
+    let d=$("dbg"); if(!d){ d=document.createElement("div"); d.id="dbg";
+      d.style.cssText="position:fixed;bottom:6px;left:10px;font:11px monospace;color:#c00;direction:ltr;z-index:9"; document.body.appendChild(d); }
+    d.textContent=`rows=${r.data.length} value=${v} cols=${r.columns.map(c=>c.label+":"+c.type).join(",")}`;
+  }
+});
+
+/* ===== Demo outside VA ===== */
+if (window.parent === window){ render(55.4); }
+else { $("num").textContent="–"; $("status").textContent="Assign 1 measure"; }
+layout();
+</script>
+</body>
+</html>
