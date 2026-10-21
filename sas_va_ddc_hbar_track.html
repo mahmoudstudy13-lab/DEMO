@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Track Bars DDC</title>
+<style>
+  :root{
+    --track:#eeeeee;      /* grey full-length track */
+    --bar:#f0a35e;        /* orange bar */
+    --value:#1f1f1f;      /* value label */
+    --label:#4a4a4a;      /* category label */
+    --ref:#3a3a3a;        /* reference line */
+    --radius:2px;
+    --label-width:34%;    /* width of category label column */
+  }
+  html,body{
+    margin:0;height:100%;overflow:hidden;background:transparent !important;
+    font-family:"Tajawal","Segoe UI","Noto Sans Arabic",Tahoma,Arial,sans-serif;
+  }
+  #chart{height:100%;box-sizing:border-box;padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:6px;}
+  .row{flex:1 1 0;max-height:34px;min-height:16px;display:flex;align-items:center;gap:10px;}
+  .lbl{flex:0 0 var(--label-width);font-size:clamp(10px,2vw,14px);font-weight:600;color:var(--label);
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .track{flex:1;align-self:stretch;margin:3px 0;background:var(--track);border-radius:var(--radius);position:relative;}
+  .bar{position:absolute;top:22%;bottom:22%;inset-inline-start:0;width:0;background:var(--bar);
+       border-radius:var(--radius);transition:width .6s ease,background .3s;}
+  .val{position:absolute;top:50%;transform:translateY(-50%);font-weight:700;font-size:clamp(10px,1.9vw,13px);
+       color:var(--value);white-space:nowrap;direction:ltr;padding-inline:6px;}
+  .ref{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--ref);}
+  .msg{margin:auto;color:#9a9a9a;font-size:13px;text-align:center;}
+
+  /* color picker for viewers */
+  #pickerBtn{position:fixed;top:4px;left:4px;width:20px;height:20px;border-radius:50%;padding:0;cursor:pointer;
+    border:1px solid rgba(0,0,0,.15);opacity:0;transition:opacity .2s;z-index:11;
+    background:conic-gradient(#f0a35e,#12cf92,#3b82f6,#8b5cf6,#ef4444,#f0a35e);}
+  body:hover #pickerBtn,#pickerBtn.open{opacity:.9;}
+  #picker{position:fixed;top:28px;left:4px;display:none;gap:6px;flex-wrap:wrap;max-width:170px;z-index:10;
+    background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);}
+  #picker.show{display:flex;}
+  .sw{width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent;}
+  .sw.active{border-color:#333;}
+  #customColor{width:22px;height:22px;padding:0;border:none;background:none;cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<button id="pickerBtn" title="Change color" aria-label="Change color"></button>
+<div id="picker"></div>
+
+<script>
+/* ===== Settings (override from URL) =====
+   ?rtl=0             left-to-right layout (default is right-to-left for Arabic)
+   ?max=100           axis maximum (default: 100 if all values <= 100, otherwise auto)
+   ?min=0             axis minimum
+   ?ref=87            fixed reference line value (or assign a 2nd measure as per-row target)
+   ?ref=avg           reference line = average of the values
+   ?decimals=1  ?sort=desc|asc|none  ?picker=0
+   colors: ?color=f0a35e  ?track=eeeeee  ?value=1f1f1f  ?label=4a4a4a  ?refcolor=3a3a3a
+*/
+const P = new URLSearchParams(location.search);
+const hex = v => v ? (v.startsWith("#") ? v : "#" + v) : null;
+const CONFIG = {
+  rtl: P.get("rtl") !== "0",
+  min: P.get("min") != null ? +P.get("min") : 0,
+  max: P.get("max") != null ? +P.get("max") : null,
+  ref: P.get("ref"),               // number, "avg", or null
+  decimals: P.get("decimals") != null ? +P.get("decimals") : 1,
+  sort: P.get("sort") || "none",
+  picker: P.get("picker") !== "0"
+};
+
+const root = document.documentElement.style;
+const chart = document.getElementById("chart");
+chart.dir = CONFIG.rtl ? "rtl" : "ltr";
+
+if (P.get("color")) root.setProperty("--bar", hex(P.get("color")));
+if (P.get("track")) root.setProperty("--track", hex(P.get("track")));
+if (P.get("value")) root.setProperty("--value", hex(P.get("value")));
+if (P.get("label")) root.setProperty("--label", hex(P.get("label")));
+if (P.get("refcolor")) root.setProperty("--ref", hex(P.get("refcolor")));
+
+/* ----- viewer color picker ----- */
+const COLORS = ["#f0a35e","#12cf92","#4f9cf9","#8b5cf6","#ef4444","#f59e0b","#14b8a6","#c9a24a","#6b7280"];
+const STORE_KEY = "ddcTrackBarsColor";
+const btn = document.getElementById("pickerBtn"), pk = document.getElementById("picker");
+function setBar(c, el){
+  root.setProperty("--bar", c);
+  try { localStorage.setItem(STORE_KEY, c); } catch(e){}
+  pk.querySelectorAll(".sw").forEach(s=>s.classList.remove("active"));
+  if (el) el.classList.add("active");
+}
+if (CONFIG.picker){
+  try { const s = localStorage.getItem(STORE_KEY); if (s) root.setProperty("--bar", s); } catch(e){}
+  COLORS.forEach(c=>{
+    const s=document.createElement("div"); s.className="sw"; s.style.background=c; s.title=c;
+    s.onclick=()=>setBar(c,s); pk.appendChild(s);
+  });
+  const inp=document.createElement("input"); inp.type="color"; inp.id="customColor"; inp.title="Custom color";
+  inp.oninput=e=>setBar(e.target.value); pk.appendChild(inp);
+  btn.onclick=e=>{e.stopPropagation();pk.classList.toggle("show");btn.classList.toggle("open");};
+  document.addEventListener("click",e=>{if(!pk.contains(e.target)){pk.classList.remove("show");btn.classList.remove("open");}});
+} else { btn.remove(); pk.remove(); }
+
+/* ----- chart ----- */
+function showMsg(t){ chart.innerHTML=""; const d=document.createElement("div"); d.className="msg"; d.textContent=t; chart.appendChild(d); }
+const fmt = v => Number(v).toLocaleString("en-US",{minimumFractionDigits:CONFIG.decimals,maximumFractionDigits:CONFIG.decimals});
+
+function render(rows){
+  rows = rows.filter(r => r.val != null && !isNaN(r.val));
+  if (!rows.length){ showMsg("No data"); return; }
+  if (CONFIG.sort === "desc") rows.sort((a,b)=>b.val-a.val);
+  if (CONFIG.sort === "asc")  rows.sort((a,b)=>a.val-b.val);
+
+  const vals = rows.map(r=>r.val);
+  let globalRef = null;
+  if (CONFIG.ref === "avg") globalRef = vals.reduce((a,b)=>a+b,0)/vals.length;
+  else if (CONFIG.ref != null && !isNaN(+CONFIG.ref)) globalRef = +CONFIG.ref;
+
+  const allTop = vals.concat(rows.map(r=>r.ref).filter(v=>v!=null&&!isNaN(v)), globalRef!=null?[globalRef]:[]);
+  const hi = Math.max(...allTop);
+  const max = CONFIG.max != null ? CONFIG.max : (hi <= 100 ? 100 : hi * 1.1);
+  const min = CONFIG.min;
+  const pct = v => Math.max(0, Math.min(100, (v - min) / (max - min) * 100));
+
+  chart.innerHTML = "";
+  rows.forEach(r=>{
+    const row=document.createElement("div"); row.className="row";
+    const lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=r.cat; lbl.title=r.cat;
+    const track=document.createElement("div"); track.className="track";
+    const bar=document.createElement("div"); bar.className="bar";
+    const val=document.createElement("div"); val.className="val"; val.textContent=fmt(r.val);
+    const p = pct(r.val);
+    // value sits just after the bar end; flips inside the bar if near the edge
+    if (p > 88){ val.style.insetInlineEnd = (100 - p) + "%"; val.style.color = "#fff"; }
+    else { val.style.insetInlineStart = p + "%"; }
+    track.append(bar, val);
+
+    const refVal = (r.ref != null && !isNaN(r.ref)) ? r.ref : globalRef;
+    if (refVal != null){
+      const ref=document.createElement("div"); ref.className="ref";
+      ref.style.insetInlineStart = pct(refVal) + "%";
+      ref.title = "Reference: " + fmt(refVal);
+      track.appendChild(ref);
+    }
+    row.append(lbl, track);
+    chart.appendChild(row);
+    requestAnimationFrame(()=>{ bar.style.width = p + "%"; });
+  });
+}
+
+/* ===== Data from SAS Visual Analytics =====
+   Roles: 1 category (required), 1st measure = value (required), 2nd measure = target/reference (optional) */
+window.addEventListener("message", function(e){
+  const r = e.data;
+  if (!r || !Array.isArray(r.columns) || !Array.isArray(r.data)) return;
+  const ci = r.columns.findIndex(c => c.type === "string");
+  const nums = r.columns.map((c,i)=>c.type==="number"?i:-1).filter(i=>i>=0);
+  if (ci < 0 || !nums.length){ showMsg("Assign 1 category and 1 measure"); return; }
+  render(r.data.map(row => ({
+    cat: String(row[ci] ?? ""),
+    val: Number(row[nums[0]]),
+    ref: nums[1] != null ? Number(row[nums[1]]) : null
+  })));
+}, false);
+
+/* ===== Demo outside VA ===== */
+if (window.parent === window){
+  CONFIG.ref = CONFIG.ref ?? "87";
+  render([
+    {cat:"دائرة الموارد البشرية الحكومية", val:52.2},
+    {cat:"دائرة الاقتصاد والسياحة", val:56.8},
+    {cat:"المجلس الأعلى للطاقة", val:56.8},
+    {cat:"الإقامة وشؤون الأجانب", val:57.1}
+  ]);
+} else {
+  showMsg("Assign 1 category and 1 measure");
+}
+</script>
+</body>
+</html>
